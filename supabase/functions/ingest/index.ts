@@ -167,25 +167,33 @@ async function fetchOil(): Promise<string | null> {
   return m ? m[1].replace(/<[^>]+>/g, "").trim() : null;
 }
 
-// نقرهٔ ۹۲۵ (هر گرم، تومان) — منبعِ اصلی: tgju (بازارِ محلی)
-async function fetchSilver925FromTgju(): Promise<number | null> {
-  try {
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 25000);
-    const r = await fetch("https://api.tgju.org/v1/market/indicator/summary-table-data/silver_925", {
-      headers: { "user-agent": UA, "accept": "application/json" },
-      signal: ctl.signal,
-    });
-    clearTimeout(t);
-    if (!r.ok) return null;
-    const j = await r.json();
-    const last = j?.data?.[0]?.[0];
-    if (!last) return null;
-    const n = Number(String(last).replace(/[^0-9.-]/g, ""));
-    return Number.isFinite(n) ? Math.round(n) : null;
-  } catch {
-    return null;
+// نقرهٔ ۹۲۵ (هر گرم، تومان) — منبعِ اصلی: tgju (بازارِ محلی). با retry برای عبور از rate-limit.
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function fetchSilver925FromTgju(): Promise<{ v: number | null; err?: string }> {
+  const attempts = 3;
+  let lastErr = "unknown";
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 20000);
+      const r = await fetch("https://api.tgju.org/v1/market/indicator/summary-table-data/silver_925", {
+        headers: { "user-agent": UA, "accept": "application/json" },
+        signal: ctl.signal,
+      });
+      clearTimeout(t);
+      if (!r.ok) { lastErr = `HTTP ${r.status}`; await sleep(3000); continue; }
+      const j = await r.json();
+      const last = j?.data?.[0]?.[0];
+      if (!last) { lastErr = "no data[0][0]"; await sleep(3000); continue; }
+      const n = Number(String(last).replace(/[^0-9.-]/g, ""));
+      if (!Number.isFinite(n)) { lastErr = "bad number"; await sleep(3000); continue; }
+      return { v: Math.round(n) };
+    } catch (e) {
+      lastErr = (e as Error).name + ":" + (e as Error).message;
+      await sleep(3000);
+    }
   }
+  return { v: null, err: lastErr };
 }
 
 // ---------------------------------------------------------------- db
@@ -257,12 +265,23 @@ Deno.serve(async (req) => {
   jobs.push(fetchEur().then((v) => (market.eur = v)).catch((e) => errors.push(`eur: ${e.message}`)));
   jobs.push(fetchGoldAndCoins().then((d) => Object.assign(market, d)).catch((e) => errors.push(`gold: ${e.message}`)));
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
-  jobs.push(fetchSilver925FromTgju().then((v) => { if (v !== null) market.silver_gram = v; }).catch((e) => errors.push(`silver_925: ${e.message}`)));
+  const silverPromise = fetchSilver925FromTgju();
   await Promise.all(jobs);
+  const silverRes = await silverPromise;
 
-  // fallback: اگر tgju در دسترس نبود، نقرهٔ ۹۲۵ را از انسِ جهانی + دلار + عیار تخمین بزن
-  if (market.silver_gram === null && market.usd && market.silver_ounce) {
-    market.silver_gram = Math.round((Number(market.silver_ounce) * Number(market.usd)) / 31.1034768 * 0.925);
+  // نقرهٔ ۹۲۵ = نوارِ داخلیِ ~۵ میلیون (منبع: tgju). «فرمولِ جهانیِ انس» WRONG است
+  // (نقطهٔ ~۴۷۰ هزار = اسپاتِ بین‌المللی، نه بازارِ داخلیِ ایران). پس fallback = آخرین مقدارِ خوبِ tgju، وگرنه null.
+  if (silverRes.v !== null) {
+    market.silver_gram = silverRes.v;
+  } else {
+    const prev = await rest("market?id=eq.1&select=silver_gram") as any[];
+    const prevSilver = prev?.[0]?.silver_gram;
+    if (prevSilver != null && Number(prevSilver) > 1000000) {
+      market.silver_gram = Number(prevSilver);
+      errors.push(`silver_925: tgju unavailable (${silverRes.err}), kept last good ${prevSilver}`);
+    } else {
+      errors.push(`silver_925: tgju unavailable (${silverRes.err}), no last-good`);
+    }
   }
 
   const now = new Date();
