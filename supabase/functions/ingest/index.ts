@@ -316,7 +316,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify(row),
   });
 
-  const watched = ["usd", "eur", "gold_18k", "coin_emami", "gold_ounce", "silver_ounce", "silver_gram", "oil"];
+  const watched = ["usd", "eur", "gold_18k", "coin_emami", "gold_ounce", "silver_gram", "oil"];
   const rows = watched.filter((s) => market[s] !== null).map((s) => ({
     symbol: s, price: Number(market[s]), ts: now.toISOString(),
   }));
@@ -326,53 +326,77 @@ Deno.serve(async (req) => {
     body: JSON.stringify(rows),
   });
 
-  // ---- periodic Telegram digest (one message per cron cycle) + big-mover flags
+  // ---- periodic Telegram digest: sectioned, Persian-format, quiet unless it moves
   const thresholdPct = Number(Deno.env.get("ALERT_PCT") ?? "0.5");
+  const quietPct = Number(Deno.env.get("ALERT_QUIET_PCT") ?? "0.2");
   const cycleMin = Number(Deno.env.get("ALERT_CYCLE_MIN") ?? "30");
 
   const allStates = [...watched, "cycle"];
   const state = await rest(`alert_state?symbol=in.(${allStates.join(",")})&select=symbol,last_price,last_alert_ts`);
   const stateMap: Record<string, any> = Object.fromEntries((state ?? []).map((s) => [s.symbol, s]));
+  const lastPrice = (s: string) => (stateMap[s]?.last_price ? Number(stateMap[s].last_price) : null);
 
-  // only send one digest per cycle: skip if we already sent within (cycleMin - 5min) tolerance
+  // at most one digest per cycle
   const lastCycleTs = stateMap.cycle?.last_alert_ts ? new Date(stateMap.cycle.last_alert_ts).getTime() : 0;
   const due = now.getTime() - lastCycleTs >= (cycleMin - 5) * 60000;
 
-  const badge = (d30: number | null): string =>
-    d30 === null || Math.abs(d30) < 0.005 ? "" : ` <i>${d30 > 0 ? "↑" : "↓"}${FA(Math.abs(d30).toFixed(1))}٪</i>`;
-  const line = (r: any): string => {
-    const prev = stateMap[r.symbol]?.last_price ? Number(stateMap[r.symbol].last_price) : null;
-    const d30 = prev ? ((r.price - prev) / prev) * 100 : null;
-    const isDollar = r.symbol === "gold_ounce" || r.symbol === "silver_ounce" || r.symbol === "oil";
-    const val = isDollar ? `${faDec(r.price)} دلار` : `${faInt(r.price)} تومان`;
-    return `${EMO[r.symbol]} <b>${NAME[r.symbol]}</b>  ${val}${badge(d30)}`;
-  };
+  const isDollar = (s: string) => s === "gold_ounce" || s === "oil";
+  const fmtVal = (s: string, p: number) => (isDollar(s) ? `${faDec(p)} دلار` : `${faInt(p)} تومان`);
+  const badge = (d: number | null) =>
+    d === null || Math.abs(d) < 0.005 ? "" : `  <i>${d > 0 ? "↑" : "↓"}${FA(Math.abs(d).toFixed(1))}٪</i>`;
+  const firstOf = (arr: any[], s: string) => { for (const p of arr ?? []) if (p.symbol === s) return Number(p.price); return null; };
+
+  // biggest mover in the last 24h (top line)
+  const prev24h = await rest(`rate_history?symbol=in.(${watched.join(",")})&ts=gte.${new Date(now.getTime() - 24 * 3600 * 1000).toISOString()}&select=symbol,price&order=ts.asc`);
+  let top = { sym: "", pct: 0 };
+  for (const s of watched) { const b = firstOf(prev24h, s); const c = Number(market[s]); if (b && c) { const p = ((c - b) / b) * 100; if (Math.abs(p) > Math.abs(top.pct)) top = { sym: s, pct: p }; } }
+
+  // 2h movers (explicit flags)
+  const prev2h = await rest(`rate_history?symbol=in.(${watched.join(",")})&ts=gte.${new Date(now.getTime() - 2 * 3600 * 1000).toISOString()}&select=symbol,price&order=ts.asc`);
+  const big2h: { s: string; p: number }[] = [];
+  for (const s of watched) { const b = firstOf(prev2h, s); const c = Number(market[s]); if (b && c) { const p = ((c - b) / b) * 100; if (Math.abs(p) >= thresholdPct) big2h.push({ s, p }); } }
+
+  // quiet gate: max move since the last digest
+  let moveMax = 0;
+  for (const s of watched) { const lp = lastPrice(s); const c = Number(market[s]); if (lp && c) moveMax = Math.max(moveMax, Math.abs((c - lp) / lp) * 100); }
+
+  const SECTIONS = [
+    { t: "💵 ارزها", s: ["usd", "eur"] },
+    { t: "🥇 طلا و سکه", s: ["gold_18k", "gold_ounce", "coin_emami"] },
+    { t: "🥈 نقره", s: ["silver_gram"] },
+    { t: "⛽ انرژی", s: ["oil"] },
+  ];
+  const sectionBlock = SECTIONS.map(({ t, s }) => {
+    const lines = s.filter((x) => market[x] !== null).map((x) => {
+      const c = Number(market[x]); const lp = lastPrice(x); const d30 = lp ? ((c - lp) / lp) * 100 : null;
+      return `${EMO[x]} <b>${NAME[x]}</b>  ${fmtVal(x, c)}${badge(d30)}`;
+    });
+    return lines.length ? `${t}\n${lines.join("\n")}` : "";
+  }).filter(Boolean).join("\n\n");
+
+  const topLine = Math.abs(top.pct) >= 0.005
+    ? `<b>🔥 بیشینهٔ نوسانِ امروز</b>\n${NAME[top.sym]} ${top.pct > 0 ? "▲" : "▼"}${FA(Math.abs(top.pct).toFixed(1))}٪`
+    : "";
+  const alertBlock = big2h.length
+    ? `<b>🚨 نوسانِ ۲ ساعته</b>\n${big2h.map((a) => `${NAME[a.s]} ${a.p > 0 ? "▲" : "▼"}${FA(Math.abs(a.p).toFixed(1))}٪`).join("\n")}`
+    : "";
 
   let tg: any = null;
   let sentDigest = false;
   if (wantsTest) {
-    tg = await sendTelegram(
-      `✅ <b>پالس بازار</b> — پیام تستی\n🕘 ${market.date_shamsi} · دلار ${market.usd ? faInt(market.usd) : "—"} تومان`
-    );
-  } else if (due) {
-    const digestLines = rows.map(line).join("\n");
-    // big movers over 2h window
-    const since2h = new Date(now.getTime() - 2 * 3600 * 1000).toISOString();
-    const prev2h = await rest(`rate_history?symbol=in.(${watched.join(",")})&ts=gte.${since2h}&select=symbol,price&order=ts.asc`);
-    const first2h: Record<string, number> = {};
-    for (const p of prev2h ?? []) if (!(p.symbol in first2h)) first2h[p.symbol] = Number(p.price);
-    const big: string[] = [];
-    for (const r of rows) {
-      const base = first2h[r.symbol];
-      if (!base) continue;
-      const pct = ((r.price - base) / base) * 100;
-      if (Math.abs(pct) >= thresholdPct) big.push(`🚨 <b>${NAME[r.symbol]}</b>  ${pct > 0 ? "▲" : "▼"}${FA(Math.abs(pct).toFixed(1))}٪ در ۲ ساعت`);
+    tg = await sendTelegram(`✅ <b>پالس بازار</b> — پیام تستی\n📅 ${market.date_shamsi} · دلار ${market.usd ? faInt(market.usd) : "—"} تومان`);
+  } else {
+    const hasBaseline = watched.some((s) => lastPrice(s) != null);
+    const quiet = hasBaseline && moveMax < quietPct && big2h.length === 0;
+    if (due && !quiet) {
+      const parts = [`📅 ${market.date_shamsi}\n🕐 ساعت ${FA(market.time)}`];
+      if (topLine) parts.push(topLine);
+      parts.push(sectionBlock);
+      if (alertBlock) parts.push(alertBlock);
+      parts.push(`<code>به‌روزرسانی بعدی: ${FA(cycleMin)} دقیقه دیگه</code>`);
+      tg = await sendTelegram(parts.join("\n\n"));
+      sentDigest = tg?.ok === true;
     }
-    const alertBlock = big.length
-      ? `\n\n<code>──────────────</code>\n<b>نوسان ۲ ساعته</b>\n${big.join("\n")}` : "";
-    const body = `📅 ${market.date_shamsi}\n🕐 ساعت ${FA(market.time)}\n\n${digestLines}${alertBlock}\n\n<code>به‌روزرسانی بعدی: ${FA(cycleMin)} دقیقه دیگه</code>`;
-    tg = await sendTelegram(body);
-    sentDigest = tg?.ok === true;
   }
 
   // record per-symbol last price + the cycle timestamp so the next run compares 30-min deltas
@@ -388,7 +412,7 @@ Deno.serve(async (req) => {
   // keep the GitHub Pages mirror live (github.io copy of the dashboard)
   let gh = null;
   try {
-    const ch = ["usd", "eur", "gold_18k", "coin_emami", "gold_ounce", "silver_ounce", "silver_gram", "oil"];
+    const ch = ["usd", "eur", "gold_18k", "coin_emami", "gold_ounce", "silver_gram", "oil"];
     const lastN = "last90";
     const hist: Record<string, any[]> = {};
     for (const s of ch) {
