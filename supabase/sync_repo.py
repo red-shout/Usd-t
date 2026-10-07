@@ -8,16 +8,18 @@ BR = "main"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # usd/
 API = f"https://api.github.com/repos/{REPO}/contents/"
 
+# (repo_path, local_file, branch)  — web/index.html lives on the `live` branch (GitHub Pages data),
+# everything else on `main` (code only).
 FILES = [
-    ("supabase/functions/ingest/index.ts", "supabase/functions/ingest/index.ts"),
-    ("supabase/functions/web/index.ts",     "supabase/functions/web/index.ts"),
-    ("supabase/schema.sql",                 "supabase/schema.sql"),
-    ("supabase/deploy.py",                  "supabase/deploy.py"),
-    ("supabase/project.ref",                "supabase/project.ref"),
-    ("supabase/sync_repo.py",               "supabase/sync_repo.py"),
-    ("web/index.html",                       "ghdashboard/index.html"),
-    ("LIVE.md",                              "LIVE.md"),
-    ("README.md",                            "README.md"),
+    ("supabase/functions/ingest/index.ts", "supabase/functions/ingest/index.ts", "main"),
+    ("supabase/functions/web/index.ts",     "supabase/functions/web/index.ts", "main"),
+    ("supabase/schema.sql",                 "supabase/schema.sql", "main"),
+    ("supabase/deploy.py",                  "supabase/deploy.py", "main"),
+    ("supabase/project.ref",                "supabase/project.ref", "main"),
+    ("supabase/sync_repo.py",               "supabase/sync_repo.py", "main"),
+    ("LIVE.md",                              "LIVE.md", "main"),
+    ("README.md",                            "README.md", "main"),
+    ("web/index.html",                       "ghdashboard/index.html", "live"),
 ]
 
 def get(url, raw=False):
@@ -26,19 +28,19 @@ def get(url, raw=False):
         b = r.read()
         return b.decode() if raw else json.loads(b)
 
-for repo_path, local in FILES:
+for repo_path, local, branch in FILES:
     full = os.path.join(ROOT, local)
     b64 = base64.b64encode(open(full, "rb").read()).decode()
     sha = ""
     try:
-        sha = get(API + repo_path + "?ref=" + BR).get("sha", "")
+        sha = get(API + repo_path + "?ref=" + branch).get("sha", "")
     except Exception:
         sha = ""
-    body = {"message": f"chore(live): sync {repo_path}", "content": b64, "branch": BR}
+    body = {"message": f"chore(live): sync {repo_path}", "content": b64, "branch": branch}
     if sha:
         body["sha"] = sha
     req = urllib.request.Request(API + repo_path, data=json.dumps(body).encode(),
                                  headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"}, method="PUT")
     with urllib.request.urlopen(req) as r:
         d = json.load(r)
-        print(f"{repo_path:34s} -> {d.get('content',{}).get('sha','?')[:8]}")
+        print(f"{repo_path:34s} [{branch:5s}] -> {d.get('content',{}).get('sha','?')[:8]}")
