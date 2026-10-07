@@ -189,7 +189,7 @@ const FA = (s: string) =>
 const faInt = (n: number) => FA(Math.round(n).toLocaleString("en-US"));
 const faDec = (n: number) => FA(n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const EMO: Record<string, string> = { usd: "💵", eur: "🇪🇺", gold_18k: "✨", coin_emami: "🪙", gold_ounce: "🌐", silver_ounce: "🥈", silver_gram: "🥈", oil: "⛽" };
-const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", gold_18k: "طلای ۱۸ع", coin_emami: "سکه امامی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقره (هر گرم)", oil: "نفت برنت" };
+const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", gold_18k: "طلای ۱۸ع", coin_emami: "سکه امامی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ ۹۲۵ (هر گرم)", oil: "نفت برنت" };
 
 async function sendTelegram(text: string) {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
@@ -238,9 +238,9 @@ Deno.serve(async (req) => {
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
   await Promise.all(jobs);
 
-  // نقره به تومان (هر گرم خالص) = انس × دلار ÷ وزنِ انس (۳۱٫۱۰۳۴۷۶۸ گرم)
+  // نقرهٔ ۹۲۵ به تومان (هر گرم) = انس × دلار ÷ وزنِ انس (۳۱٫۱۰۳۴۷۶۸ گرم) × عیار (۰٫۹۲۵)
   if (market.usd && market.silver_ounce) {
-    market.silver_gram = Math.round((Number(market.silver_ounce) * Number(market.usd)) / 31.1034768);
+    market.silver_gram = Math.round((Number(market.silver_ounce) * Number(market.usd)) / 31.1034768 * 0.925);
   }
 
   const now = new Date();
