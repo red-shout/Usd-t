@@ -346,11 +346,6 @@ Deno.serve(async (req) => {
     d === null || Math.abs(d) < 0.005 ? "" : `  <i>${d > 0 ? "↑" : "↓"}${FA(Math.abs(d).toFixed(1))}٪</i>`;
   const firstOf = (arr: any[], s: string) => { for (const p of arr ?? []) if (p.symbol === s) return Number(p.price); return null; };
 
-  // biggest mover in the last 24h (top line)
-  const prev24h = await rest(`rate_history?symbol=in.(${watched.join(",")})&ts=gte.${new Date(now.getTime() - 24 * 3600 * 1000).toISOString()}&select=symbol,price&order=ts.asc`);
-  let top = { sym: "", pct: 0 };
-  for (const s of watched) { const b = firstOf(prev24h, s); const c = Number(market[s]); if (b && c) { const p = ((c - b) / b) * 100; if (Math.abs(p) > Math.abs(top.pct)) top = { sym: s, pct: p }; } }
-
   // 2h movers (explicit flags)
   const prev2h = await rest(`rate_history?symbol=in.(${watched.join(",")})&ts=gte.${new Date(now.getTime() - 2 * 3600 * 1000).toISOString()}&select=symbol,price&order=ts.asc`);
   const big2h: { s: string; p: number }[] = [];
@@ -374,9 +369,6 @@ Deno.serve(async (req) => {
     return lines.length ? `${t}\n${lines.join("\n")}` : "";
   }).filter(Boolean).join("\n\n");
 
-  const topLine = Math.abs(top.pct) >= 0.005
-    ? `<b>🔥 بیشینهٔ نوسانِ امروز</b>\n${NAME[top.sym]} ${top.pct > 0 ? "▲" : "▼"}${FA(Math.abs(top.pct).toFixed(1))}٪`
-    : "";
   const alertBlock = big2h.length
     ? `<b>🚨 نوسانِ ۲ ساعته</b>\n${big2h.map((a) => `${NAME[a.s]} ${a.p > 0 ? "▲" : "▼"}${FA(Math.abs(a.p).toFixed(1))}٪`).join("\n")}`
     : "";
@@ -390,7 +382,6 @@ Deno.serve(async (req) => {
     const quiet = hasBaseline && moveMax < quietPct && big2h.length === 0;
     if (due && !quiet) {
       const parts = [`📅 ${market.date_shamsi}\n🕐 ساعت ${FA(market.time)}`];
-      if (topLine) parts.push(topLine);
       parts.push(sectionBlock);
       if (alertBlock) parts.push(alertBlock);
       parts.push(`<code>به‌روزرسانی بعدی: ${FA(cycleMin)} دقیقه دیگه</code>`);
