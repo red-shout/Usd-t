@@ -158,12 +158,12 @@
 
 * **قیمت‌های زنده تمامی ۳۷ ارز و مسکوکات:**
   ```text
-  https://raw.githubusercontent.com/itsyebekhe/nabz/main/market.json
+  https://raw.githubusercontent.com/red-shout/Usd-t/main/market.json
   ```
 
 * **آرشیو تاریخی هر دارایی:**
   ```text
-  https://raw.githubusercontent.com/itsyebekhe/nabz/main/api/history_<symbol>.json
+  https://raw.githubusercontent.com/red-shout/Usd-t/main/api/history_<symbol>.json
   ```
   *(نمونه: `history_usd.json`, `history_eur.json`, `history_coin_emami.json`, `history_usd_xau.json`)*
 
@@ -172,5 +172,9 @@
 <div align="center">
 <sub>ساخته‌شده با ❤️ توسط <a href="https://t.me/yebekhe">@yebekhe</a> | داده‌ها به صورت خودکار هر ۳۰ دقیقه بروزرسانی می‌شوند</sub>
 </div>
+
+<p align="center">
+  <a href="LICENSE">MIT License</a>
+</p>
 
 </div>
