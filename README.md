@@ -13,7 +13,6 @@
 ## دسترسی زنده
 - **داشبورد وب (موبایل‌پسند):** `https://red-shout.github.io/Usd-t/`
 - **API خام:** `.../functions/v1/<slug>?format=json&symbol=usd&hours=4320` (روی Supabase)
-- **کانال اعلان:** `@USDTIRTLIVE`
 
 ## چرخه
 - هر ۳۰ دقیقه (pg_cron) → اسکراپِ قیمت‌ها → ذخیره در Postgres → اعلان تلگرامی + refreshِ داده‌ی وب.
