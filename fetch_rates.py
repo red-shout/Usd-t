@@ -107,14 +107,14 @@ def format_price_display(val, unit="تومان"):
 
 ALL_ASSETS = {
     # Gold & Coins
-    "gold_mesghal": {"title": "مثقال طلا (آبشده)", "symbol": "MESGHAL", "type": "gold", "url": "https://alanchand.com/en/gold-price/abshodeh", "category": "gold", "unit": "تومان", "color": "#d97706"},
-    "gold_18k": {"title": "طلای ۱۸ عیار", "symbol": "GOLD_18K", "type": "gold", "url": "https://alanchand.com/en/gold-price/18ayar", "category": "gold", "unit": "تومان", "color": "#eab308"},
+    "gold_mesghal": {"title": "مثقال طلا (آبشده)", "symbol": "MESGHAL", "type": "gold", "url": "https://alanchand.com/en/gold-price/abshodeh", "category": "gold", "unit": "تومان", "color": "#fbbf24"},
+    "gold_18k": {"title": "طلای ۱۸ عیار", "symbol": "GOLD_18K", "type": "gold", "url": "https://alanchand.com/en/gold-price/18ayar", "category": "gold", "unit": "تومان", "color": "#f59e0b"},
     "coin_emami": {"title": "سکه تمام امامی", "symbol": "COIN_EMAMI", "type": "gold", "url": "https://alanchand.com/en/gold-price/sekkeh", "category": "gold", "unit": "تومان", "color": "#f59e0b"},
     "coin_bahar": {"title": "سکه بهار آزادی", "symbol": "COIN_BAHAR", "type": "gold", "url": "https://alanchand.com/en/gold-price/bahar", "category": "gold", "unit": "تومان", "color": "#d97706"},
     "coin_half": {"title": "نیم سکه", "symbol": "COIN_HALF", "type": "gold", "url": "https://alanchand.com/en/gold-price/nim", "category": "gold", "unit": "تومان", "color": "#eab308"},
     "coin_quarter": {"title": "ربع سکه", "symbol": "COIN_QUARTER", "type": "gold", "url": "https://alanchand.com/en/gold-price/rob", "category": "gold", "unit": "تومان", "color": "#ca8a04"},
     "coin_gram": {"title": "سکه گرمی", "symbol": "COIN_GRAM", "type": "gold", "url": "https://alanchand.com/en/gold-price/sek", "category": "gold", "unit": "تومان", "color": "#a16207"},
-    "usd_xau": {"title": "انس جهانی طلا", "symbol": "XAU_USD", "type": "ounce", "url": "https://alanchand.com/en/gold-price/usd_xau", "category": "gold", "unit": "دلار", "color": "#059669"},
+    "usd_xau": {"title": "انس جهانی طلا", "symbol": "XAU_USD", "type": "ounce", "url": "https://alanchand.com/en/gold-price/usd_xau", "category": "gold", "unit": "دلار", "color": "#34d399"},
 
     # Major Fiats
     "usd": {"title": "دلار آمریکا", "symbol": "USD", "type": "pegged_usd", "category": "major", "unit": "تومان", "color": "#2563eb"},
@@ -127,36 +127,36 @@ ALL_ASSETS = {
     "cny": {"title": "یوان چین", "symbol": "CNY", "type": "currency", "url": "https://alanchand.com/en/currencies-price/cny", "category": "major", "unit": "تومان", "color": "#f97316"},
 
     # Other Fiats
-    "rub": {"title": "روبل روسیه", "symbol": "RUB", "type": "currency", "url": "https://alanchand.com/en/currencies-price/rub", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "iqd": {"title": "۱۰۰ دینار عراق", "symbol": "IQD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/iqd", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "myr": {"title": "رینگیت مالزی", "symbol": "MYR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/myr", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "gel": {"title": "لاری گرجستان", "symbol": "GEL", "type": "currency", "url": "https://alanchand.com/en/currencies-price/gel", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "azn": {"title": "منات آذربایجان", "symbol": "AZN", "type": "currency", "url": "https://alanchand.com/en/currencies-price/azn", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "amd": {"title": "۱۰۰ درام ارمنستان", "symbol": "AMD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/amd", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "thb": {"title": "بات تایلند", "symbol": "THB", "type": "currency", "url": "https://alanchand.com/en/currencies-price/thb", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "omr": {"title": "ریال عمان", "symbol": "OMR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/omr", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "inr": {"title": "روپیه هند", "symbol": "INR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/inr", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "pkr": {"title": "روپیه پاکستان", "symbol": "PKR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/pkr", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "jpy": {"title": "۱۰۰ ین ژاپن", "symbol": "JPY", "type": "currency", "url": "https://alanchand.com/en/currencies-price/jpy", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "sar": {"title": "ریال عربستان", "symbol": "SAR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/sar", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "afn": {"title": "افغانی افغانستان", "symbol": "AFN", "type": "currency", "url": "https://alanchand.com/en/currencies-price/afn", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "sek": {"title": "کرون سوئد", "symbol": "SEK", "type": "currency", "url": "https://alanchand.com/en/currencies-price/sek", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "chf": {"title": "فرانک سوئیس", "symbol": "CHF", "type": "currency", "url": "https://alanchand.com/en/currencies-price/chf", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "qar": {"title": "ریال قطر", "symbol": "QAR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/qar", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "krw": {"title": "۱۰۰ وون کره", "symbol": "KRW", "type": "currency", "url": "https://alanchand.com/en/currencies-price/krw", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "nok": {"title": "کرون نروژ", "symbol": "NOK", "type": "currency", "url": "https://alanchand.com/en/currencies-price/nok", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "nzd": {"title": "دلار نیوزیلند", "symbol": "NZD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/nzd", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "sgd": {"title": "دلار سنگاپور", "symbol": "SGD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/sgd", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "hkd": {"title": "دلار هنگ کنگ", "symbol": "HKD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/hkd", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "kwd": {"title": "دینار کویت", "symbol": "KWD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/kwd", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "dkk": {"title": "کرون دانمارک", "symbol": "DKK", "type": "currency", "url": "https://alanchand.com/en/currencies-price/dkk", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "bhd": {"title": "دینار بحرین", "symbol": "BHD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/bhd", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "tjs": {"title": "سامانی تاجیکستان", "symbol": "TJS", "type": "currency", "url": "https://alanchand.com/en/currencies-price/tjs", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "tmt": {"title": "منات ترکمنستان", "symbol": "TMT", "type": "currency", "url": "https://alanchand.com/en/currencies-price/tmt", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "kgs": {"title": "سام قرقیزستان", "symbol": "KGS", "type": "currency", "url": "https://alanchand.com/en/currencies-price/kgs", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "syp": {"title": "۱۰۰ لیر سوریه", "symbol": "SYP", "type": "currency", "url": "https://alanchand.com/en/currencies-price/syp", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "brl": {"title": "رئال برزیل", "symbol": "BRL", "type": "currency", "url": "https://alanchand.com/en/currencies-price/brl", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
-    "ars": {"title": "پزو آرژانتین", "symbol": "ARS", "type": "currency", "url": "https://alanchand.com/en/currencies-price/ars", "category": "fiat", "unit": "تومان", "color": "#3b82f6"},
+    "rub": {"title": "روبل روسیه", "symbol": "RUB", "type": "currency", "url": "https://alanchand.com/en/currencies-price/rub", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "iqd": {"title": "۱۰۰ دینار عراق", "symbol": "IQD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/iqd", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "myr": {"title": "رینگیت مالزی", "symbol": "MYR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/myr", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "gel": {"title": "لاری گرجستان", "symbol": "GEL", "type": "currency", "url": "https://alanchand.com/en/currencies-price/gel", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "azn": {"title": "منات آذربایجان", "symbol": "AZN", "type": "currency", "url": "https://alanchand.com/en/currencies-price/azn", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "amd": {"title": "۱۰۰ درام ارمنستان", "symbol": "AMD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/amd", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "thb": {"title": "بات تایلند", "symbol": "THB", "type": "currency", "url": "https://alanchand.com/en/currencies-price/thb", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "omr": {"title": "ریال عمان", "symbol": "OMR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/omr", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "inr": {"title": "روپیه هند", "symbol": "INR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/inr", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "pkr": {"title": "روپیه پاکستان", "symbol": "PKR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/pkr", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "jpy": {"title": "۱۰۰ ین ژاپن", "symbol": "JPY", "type": "currency", "url": "https://alanchand.com/en/currencies-price/jpy", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "sar": {"title": "ریال عربستان", "symbol": "SAR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/sar", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "afn": {"title": "افغانی افغانستان", "symbol": "AFN", "type": "currency", "url": "https://alanchand.com/en/currencies-price/afn", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "sek": {"title": "کرون سوئد", "symbol": "SEK", "type": "currency", "url": "https://alanchand.com/en/currencies-price/sek", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "chf": {"title": "فرانک سوئیس", "symbol": "CHF", "type": "currency", "url": "https://alanchand.com/en/currencies-price/chf", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "qar": {"title": "ریال قطر", "symbol": "QAR", "type": "currency", "url": "https://alanchand.com/en/currencies-price/qar", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "krw": {"title": "۱۰۰ وون کره", "symbol": "KRW", "type": "currency", "url": "https://alanchand.com/en/currencies-price/krw", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "nok": {"title": "کرون نروژ", "symbol": "NOK", "type": "currency", "url": "https://alanchand.com/en/currencies-price/nok", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "nzd": {"title": "دلار نیوزیلند", "symbol": "NZD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/nzd", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "sgd": {"title": "دلار سنگاپور", "symbol": "SGD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/sgd", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "hkd": {"title": "دلار هنگ کنگ", "symbol": "HKD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/hkd", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "kwd": {"title": "دینار کویت", "symbol": "KWD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/kwd", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "dkk": {"title": "کرون دانمارک", "symbol": "DKK", "type": "currency", "url": "https://alanchand.com/en/currencies-price/dkk", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "bhd": {"title": "دینار بحرین", "symbol": "BHD", "type": "currency", "url": "https://alanchand.com/en/currencies-price/bhd", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "tjs": {"title": "سامانی تاجیکستان", "symbol": "TJS", "type": "currency", "url": "https://alanchand.com/en/currencies-price/tjs", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "tmt": {"title": "منات ترکمنستان", "symbol": "TMT", "type": "currency", "url": "https://alanchand.com/en/currencies-price/tmt", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "kgs": {"title": "سام قرقیزستان", "symbol": "KGS", "type": "currency", "url": "https://alanchand.com/en/currencies-price/kgs", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "syp": {"title": "۱۰۰ لیر سوریه", "symbol": "SYP", "type": "currency", "url": "https://alanchand.com/en/currencies-price/syp", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "brl": {"title": "رئال برزیل", "symbol": "BRL", "type": "currency", "url": "https://alanchand.com/en/currencies-price/brl", "category": "fiat", "unit": "تومان", "color": "#64748b"},
+    "ars": {"title": "پزو آرژانتین", "symbol": "ARS", "type": "currency", "url": "https://alanchand.com/en/currencies-price/ars", "category": "fiat", "unit": "تومان", "color": "#64748b"},
 }
 
 
@@ -342,7 +342,7 @@ def generate_chart(history_records, title, output_file, line_color="#2563eb", fi
 
 def generate_share_pages(market_data):
     os.makedirs("share", exist_ok=True)
-    repo_slug = os.environ.get("GITHUB_REPOSITORY", "itsyebekhe/nabz")
+    repo_slug = os.environ.get("GITHUB_REPOSITORY", "red-shout/Usd-t")
 
     for key, cfg in ALL_ASSETS.items():
         price = market_data.get(key)
@@ -403,7 +403,7 @@ def update_readme(market_data):
     gregorian_date_str = market_data.get("date", "--")
     time_str = to_persian_digits(market_data.get("time", "--:--"))
 
-    repo_slug = os.environ.get("GITHUB_REPOSITORY", "username/repo")
+    repo_slug = os.environ.get("GITHUB_REPOSITORY", "red-shout/Usd-t")
     BT = chr(96) * 3
 
     readme_content = f"""<div dir="rtl" align="center">
@@ -581,6 +581,10 @@ def update_readme(market_data):
 <sub>ساخته‌شده با ❤️ توسط <a href="https://t.me/yebekhe">@yebekhe</a> | داده‌ها به صورت خودکار هر ۳۰ دقیقه بروزرسانی می‌شوند</sub>
 </div>
 
+<p align="center">
+  <a href="LICENSE">MIT License</a>
+</p>
+
 </div>
 """
     with open("README.md", "w", encoding="utf-8") as f:
@@ -688,3 +692,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
