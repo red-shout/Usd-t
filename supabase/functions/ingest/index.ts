@@ -370,7 +370,7 @@ Deno.serve(async (req) => {
     }
     const alertBlock = big.length
       ? `\n\n<code>──────────────</code>\n<b>نوسان ۲ ساعته</b>\n${big.join("\n")}` : "";
-    const body = `📊 <b>پالس بازار</b>\n🕘 ${market.date_shamsi} · ساعت ${FA(market.time)}\n\n${digestLines}${alertBlock}\n\n<code>به‌روزرسانی بعدی: ۳۰ دقیقه دیگه</code>`;
+    const body = `📅 ${market.date_shamsi}\n🕐 ساعت ${FA(market.time)}\n\n${digestLines}${alertBlock}\n\n<code>به‌روزرسانی بعدی: ${FA(cycleMin)} دقیقه دیگه</code>`;
     tg = await sendTelegram(body);
     sentDigest = tg?.ok === true;
   }
