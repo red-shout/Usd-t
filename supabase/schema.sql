@@ -1,4 +1,4 @@
--- نبض بازار · schema
+-- پالس بازار · schema
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
