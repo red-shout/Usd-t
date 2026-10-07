@@ -113,7 +113,7 @@ const FA=s=>String(s).replace(/\\d/g,d=>"۰۱۲۳۴۵۶۷۸۹"[d]);
 const NF=n=>FA(Math.round(n).toLocaleString("en-US"));
 const CARDS=[["usd","🇺🇸","دلار آمریکا","toman"],["eur","🇪🇺","یورو اروپا","toman"],
 ["gold_18k","✨","طلای ۱۸ عیار","toman"],["gold_mesghal","⚖️","مثقال طلا","toman"],
-["gold_ounce","🌐","انس جهانی طلا","usd"],["silver_ounce","🥈","انس جهانی نقره","usd"],["silver_gram","🥈","نقره (هر گرم)","toman"],["coin_emami","🟡","سکه امامی","toman"],
+["gold_ounce","🌐","انس جهانی طلا","usd"],["silver_ounce","🥈","انس جهانی نقره","usd"],["silver_gram","🥈","نقرهٔ ۹۲۵ (هر گرم)","toman"],["coin_emami","🟡","سکه امامی","toman"],
 ["coin_bahar","🟡","سکه بهار آزادی","toman"],["coin_half","🟡","نیم‌سکه","toman"],
 ["coin_quarter","🟡","ربع‌سکه","toman"],["coin_gram","🟡","سکه گرمی","toman"],
 ["oil","⛽","نفت برنت","usd"]];
