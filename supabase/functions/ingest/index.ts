@@ -167,6 +167,27 @@ async function fetchOil(): Promise<string | null> {
   return m ? m[1].replace(/<[^>]+>/g, "").trim() : null;
 }
 
+// نقرهٔ ۹۲۵ (هر گرم، تومان) — منبعِ اصلی: tgju (بازارِ محلی)
+async function fetchSilver925FromTgju(): Promise<number | null> {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 25000);
+    const r = await fetch("https://api.tgju.org/v1/market/indicator/summary-table-data/silver_925", {
+      headers: { "user-agent": UA, "accept": "application/json" },
+      signal: ctl.signal,
+    });
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const last = j?.data?.[0]?.[0];
+    if (!last) return null;
+    const n = Number(String(last).replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? Math.round(n) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------- db
 async function rest(path: string, opts: RequestInit = {}): Promise<any> {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -236,10 +257,11 @@ Deno.serve(async (req) => {
   jobs.push(fetchEur().then((v) => (market.eur = v)).catch((e) => errors.push(`eur: ${e.message}`)));
   jobs.push(fetchGoldAndCoins().then((d) => Object.assign(market, d)).catch((e) => errors.push(`gold: ${e.message}`)));
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
+  jobs.push(fetchSilver925FromTgju().then((v) => { if (v !== null) market.silver_gram = v; }).catch((e) => errors.push(`silver_925: ${e.message}`)));
   await Promise.all(jobs);
 
-  // نقرهٔ ۹۲۵ به تومان (هر گرم) = انس × دلار ÷ وزنِ انس (۳۱٫۱۰۳۴۷۶۸ گرم) × عیار (۰٫۹۲۵)
-  if (market.usd && market.silver_ounce) {
+  // fallback: اگر tgju در دسترس نبود، نقرهٔ ۹۲۵ را از انسِ جهانی + دلار + عیار تخمین بزن
+  if (market.silver_gram === null && market.usd && market.silver_ounce) {
     market.silver_gram = Math.round((Number(market.silver_ounce) * Number(market.usd)) / 31.1034768 * 0.925);
   }
 
