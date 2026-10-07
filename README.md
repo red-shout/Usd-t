@@ -1,16 +1,8 @@
 <div dir="rtl" align="center">
 
-# 📊 نبض بازار | قیمت لحظه‌ای و تاریخچه ارز، طلا و سکه
+# 📊 پالس بازار
 
-[![Auto Update](https://img.shields.io/badge/Auto--Update-Every_30_Minutes-10b981?style=for-the-badge&logo=githubactions&logoColor=white)](#)
-[![API Status](https://img.shields.io/badge/API-Live_&_Free-3b82f6?style=for-the-badge&logo=json&logoColor=white)](#-وب‌سرویس-و-دسترسی-api)
-[![Timezone](https://img.shields.io/badge/Timezone-Tehran_(UTC%2B3:30)-f59e0b?style=for-the-badge)](#)
-[![Telegram](https://img.shields.io/badge/Telegram-@yebekhe-229ED9?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/yebekhe)
-
-<br/>
-
-> [!NOTE]
-> 📅 **تاریخ:** ۱۵ مهر ۱۴۰۵ (2026-10-07) &nbsp;|&nbsp; ⏱ **ساعت آخرین بروزرسانی:** **۱۲:۴۱** (به وقت تهران)
+قیمتِ لحظه‌ایِ ارز، طلا، سکه، نقره و نفت + اعلانِ تلگرامی، هر ۳۰ دقیقه.
 
 <br/>
 
@@ -18,163 +10,26 @@
 
 <div dir="rtl">
 
-### 📋 جدول زنده نرخ‌ها
+## دسترسی زنده
+- **داشبورد وب (موبایل‌پسند):** `https://red-shout.github.io/Usd-t/`
+- **API خام:** `.../functions/v1/<slug>?format=json&symbol=usd&hours=4320` (روی Supabase)
+- **کانال اعلان:** `@USDTIRTLIVE`
 
-<table width="100%">
-<thead>
-<tr>
-<th width="8%" align="center">نماد</th>
-<th width="52%" align="right">عنوان شاخص بازار</th>
-<th width="40%" align="left">قیمت زنده (بازار آزاد)</th>
-</tr>
-</thead>
-<tbody>
+## چرخه
+- هر ۳۰ دقیقه (pg_cron) → اسکراپِ قیمت‌ها → ذخیره در Postgres → اعلان تلگرامی + refreshِ داده‌ی وب.
+- **منبعِ داده‌ها:** [alanchand.com](https://alanchand.com) (دلار/یورو/طلا/سکه/نقره) و [oilprice.com](https://oilprice.com) (نفت برنت).
 
-<!-- بخش ارزهای شاخص -->
-<tr>
-<th colspan="3" align="right" bgcolor="#f1f5f9">💵 ارزهای شاخص</th>
-</tr>
-<tr>
-<td align="center">🇺🇸</td>
-<td><b>دلار آمریکا</b></td>
-<td align="left"><b>۲۶۴،۹۹۳ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🇪🇺</td>
-<td><b>یورو اروپا</b></td>
-<td align="left"><b>۲۹۶،۸۰۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🇦🇪</td>
-<td><b>درهم امارات</b></td>
-<td align="left"><b>۷۲،۱۵۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🇹🇷</td>
-<td><b>لیر ترکیه</b></td>
-<td align="left"><b>۵،۴۷۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🇬🇧</td>
-<td><b>پوند انگلیس</b></td>
-<td align="left"><b>۳۴۷،۴۰۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🇨🇦</td>
-<td><b>دلار کانادا</b></td>
-<td align="left"><b>۱۸۶،۳۰۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🇦🇺</td>
-<td><b>دلار استرالیا</b></td>
-<td align="left"><b>۱۸۴،۸۰۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🇨🇳</td>
-<td><b>یوان چین</b></td>
-<td align="left"><b>۳۹،۶۲۰ تومان</b></td>
-</tr>
+## شاخص‌ها
+دلار، یورو، طلای ۱۸ع، مثقال، انس طلا، **انس نقره، نقره (هر گرم)**، سکه (امامی/بهار/نیم/ربع/گرمی)، نفت برنت.
+> «نقره (هر گرم)» محاسبه‌شده است: `انس × دلار(تومان) ÷ ۳۱٫۱۰۳`.
 
-<!-- بخش مسکوکات و طلا -->
-<tr>
-<th colspan="3" align="right" bgcolor="#f1f5f9">🪙 مسکوکات بهار آزادی و طلا</th>
-</tr>
-<tr>
-<td align="center">🟡</td>
-<td><b>سکه تمام امامی (طرح جدید)</b></td>
-<td align="left"><b>۲۶۸،۵۰۰،۰۰۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🟡</td>
-<td><b>سکه بهار آزادی (طرح قدیم)</b></td>
-<td align="left"><b>۲۵۸،۰۰۰،۰۰۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🟡</td>
-<td><b>نیم سکه بهار آزادی</b></td>
-<td align="left"><b>۱۴۲،۰۰۰،۰۰۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🟡</td>
-<td><b>ربع سکه بهار آزادی</b></td>
-<td align="left"><b>۷۶،۵۰۰،۰۰۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🟡</td>
-<td><b>سکه گرمی</b></td>
-<td align="left"><b>۳۷،۰۰۰،۰۰۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">✨</td>
-<td><b>طلای ۱۸ عیار (هر گرم)</b></td>
-<td align="left"><b>۲۶،۱۷۸،۴۹۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">⚖️</td>
-<td><b>مثقال طلا (آبشده)</b></td>
-<td align="left"><b>۱۱۳،۴۰۰،۰۰۰ تومان</b></td>
-</tr>
-<tr>
-<td align="center">🌐</td>
-<td><b>انس جهانی طلا</b></td>
-<td align="left"><b>۴،۱۲۳.۷۰ دلار</b></td>
-</tr>
-
-<!-- کامودیتی -->
-<tr>
-<th colspan="3" align="right" bgcolor="#f1f5f9">🛢️ کامودیتی و انرژی</th>
-</tr>
-<tr>
-<td align="center">⛽</td>
-<td><b>نفت خام برنت / اوپک</b></td>
-<td align="left"><b>۸۹.۵۶ دلار</b></td>
-</tr>
-
-</tbody>
-</table>
-
----
-
-### 📈 نمودار روند ۶ ماهه شاخص‌ها
-
-#### دلار آمریکا
-<div align="center">
-  <img src="charts/usd.png?raw=true" alt="نمودار دلار آمریکا" width="100%" style="border-radius: 12px;" />
-</div>
-
-#### سکه تمام امامی
-<div align="center">
-  <img src="charts/coin_emami.png?raw=true" alt="نمودار سکه امامی" width="100%" style="border-radius: 12px;" />
-</div>
-
-#### طلای ۱۸ عیار
-<div align="center">
-  <img src="charts/gold_18k.png?raw=true" alt="نمودار طلای ۱۸ عیار" width="100%" style="border-radius: 12px;" />
-</div>
-
----
-
-### 🚀 وب‌سرویس و دسترسی API
-
-* **قیمت‌های زنده تمامی ۳۷ ارز و مسکوکات:**
-  ```text
-  https://raw.githubusercontent.com/red-shout/Usd-t/main/market.json
-  ```
-
-* **آرشیو تاریخی هر دارایی:**
-  ```text
-  https://raw.githubusercontent.com/red-shout/Usd-t/main/api/history_<symbol>.json
-  ```
-  *(نمونه: `history_usd.json`, `history_eur.json`, `history_coin_emami.json`, `history_usd_xau.json`)*
-
----
-
-<div align="center">
-<sub>ساخته‌شده با ❤️ توسط <a href="https://t.me/yebekhe">@yebekhe</a> | داده‌ها به صورت خودکار هر ۳۰ دقیقه بروزرسانی می‌شوند</sub>
-</div>
-
-<p align="center">
-  <a href="LICENSE">MIT License</a>
-</p>
+## ساختارِ مخزن (منبعِ اصلیِ سیستمِ زنده)
+```
+supabase/functions/ingest/index.ts   # اسکراپ + DB + تلگرام + push داده
+supabase/functions/web/index.ts       # داشبورد + API
+supabase/schema.sql · deploy.py · project.ref · sync_repo.py
+web/index.html · web/data.json       # آینهٔ GitHub Pages (داده فقط توسط ingest)
+LIVE.md                              # مستندِ کامل
+```
 
 </div>
