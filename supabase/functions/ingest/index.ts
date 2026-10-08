@@ -229,10 +229,14 @@ async function rest(path: string, opts: RequestInit = {}): Promise<any> {
 }
 
 // ---------------------------------------------------------------- telegram
-const FA = (s: string) =>
-  String(s).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]).replace(/\./g, "٫").replace(/,/g, "٬");
-const faInt = (n: number) => FA(Math.round(n).toLocaleString("en-US"));
-const faDec = (n: number) => FA(n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+// All digits in messages are Latin. The % sign stays ASCII on purpose:
+// Telegram renders "٪" inconsistently inside <b> tags.
+const FA = (s: unknown) => String(s);
+const faInt = (n: number) => Math.round(n).toLocaleString("en-US");
+const faDec = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// price text, no digit substitution
+const intTxt = (n: number) => Math.round(n).toLocaleString("en-US");
+const decTxt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const EMO: Record<string, string> = { usd: "💵", eur: "🇪🇺", aed: "🇦🇪", gold_18k: "✨", coin_emami: "🪙", gold_ounce: "🌐", silver_ounce: "🥈", silver_gram: "🥈", oil: "⛽" };
 const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", aed: "درهم", gold_18k: "طلای ۱۸ع", coin_emami: "سکه امامی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ ۹۲۵ (هر گرم)", oil: "نفت برنت" };
 
@@ -347,6 +351,12 @@ Deno.serve(async (req) => {
   const thresholdPct = Number(Deno.env.get("ALERT_PCT") ?? "0.5");
   const quietPct = Number(Deno.env.get("ALERT_QUIET_PCT") ?? "0.2");
   const cycleMin = Number(Deno.env.get("ALERT_CYCLE_MIN") ?? "30");
+  const volatilityWindowMin = Number(Deno.env.get("VOL_WINDOW_MIN") ?? "60");
+  // Per-symbol threshold multiplier: a symbol that rarely moves (coin, gold gram)
+  // should not fire on its ordinary noise, while an active one (usd) should.
+  const dynThresholdMul = Number(Deno.env.get("ALERT_DYN_MUL") ?? "1.6");
+  const dynThresholdFloor = Number(Deno.env.get("ALERT_DYN_FLOOR") ?? "0.35");
+  const staleCycles = Number(Deno.env.get("ALERT_STALE_CYCLES") ?? "3");
 
   const allStates = [...watched, "cycle"];
   const state = await rest(`alert_state?symbol=in.(${allStates.join(",")})&select=symbol,last_price,last_alert_ts`);
@@ -359,14 +369,60 @@ Deno.serve(async (req) => {
 
   const isDollar = (s: string) => s === "gold_ounce" || s === "oil";
   const fmtVal = (s: string, p: number) => (isDollar(s) ? `${faDec(p)} دلار` : `${faInt(p)} تومان`);
-  const badge = (d: number | null) =>
-    d === null || Math.abs(d) < 0.005 ? "" : `  <i>${d > 0 ? "↑" : "↓"}${FA(Math.abs(d).toFixed(1))}٪</i>`;
+  // Per-line percentage is intentionally omitted: the message stays scannable and
+  // the only percentage the user sees is the volatility block further down.
+  const badge = (_d: number | null) => "";
   const firstOf = (arr: any[], s: string) => { for (const p of arr ?? []) if (p.symbol === s) return Number(p.price); return null; };
 
-  // 2h movers (explicit flags)
-  const prev2h = await rest(`rate_history?symbol=in.(${watched.join(",")})&ts=gte.${new Date(now.getTime() - 2 * 3600 * 1000).toISOString()}&select=symbol,price&order=ts.asc`);
-  const big2h: { s: string; p: number }[] = [];
-  for (const s of watched) { const b = firstOf(prev2h, s); const c = Number(market[s]); if (b && c) { const p = ((c - b) / b) * 100; if (Math.abs(p) >= thresholdPct) big2h.push({ s, p }); } }
+  // Volatility window: peak step between consecutive 15-min polls inside the
+  // window. Endpoints-only comparison silently misses a spike that retraced,
+  // which is exactly the move worth reporting.
+  const winMs = volatilityWindowMin * 60 * 1000;
+  const rowsWin = await rest(`rate_history?symbol=in.(${watched.join(",")})&ts=gte.${new Date(now.getTime() - winMs).toISOString()}&select=symbol,price,ts&order=ts.asc&limit=2000`);
+  const bySym: Record<string, { p: number; t: string }[]> = {};
+  for (const r of rowsWin ?? []) (bySym[r.symbol] ??= []).push({ p: Number(r.price), t: r.ts });
+
+  // Stale-feed detection: a symbol whose last N polls are byte-identical is
+  // almost certainly a dead source, not a calm market. Silence must not be
+  // reported as "no news".
+  const stale: { s: string; flat: number }[] = [];
+  for (const s of watched) {
+    const arr = (bySym[s] ?? []).filter((x) => Number.isFinite(x.p));
+    if (arr.length < staleCycles) continue;
+    const tail = arr.slice(-staleCycles);
+    const base = arr[arr.length - 1 - staleCycles];
+    if (base && tail.every((x) => x.p === base.p)) stale.push({ s, flat: staleCycles });
+  }
+
+  const big2h: { s: string; p: number; thr: number }[] = [];
+  for (const s of watched) {
+    const arr = (bySym[s] ?? []).filter((x) => Number.isFinite(x.p));
+    const cur = Number(market[s]);
+    if (arr.length && Number.isFinite(cur)) arr.push({ p: cur, t: now.toISOString() });
+    let peak = 0;
+    for (let i = 1; i < arr.length; i++) {
+      const prevP = arr[i - 1].p;
+      if (!prevP) continue;
+      const step = ((arr[i].p - prevP) / prevP) * 100;
+      if (Math.abs(step) > Math.abs(peak)) peak = step;
+    }
+    // Dynamic bar: max(floor, multiplier x p90 of this symbol's own 15-min steps).
+    // A fixed 0.5% would either spam quiet symbols or hide real dollar moves.
+    let dyn = thresholdPct;
+    if (dynThresholdMul > 0) {
+      const steps: number[] = [];
+      for (let i = 1; i < arr.length; i++) {
+        const prevP = arr[i - 1].p;
+        if (prevP) steps.push(Math.abs(((arr[i].p - prevP) / prevP) * 100));
+      }
+      if (steps.length >= 8) {
+        steps.sort((a, b) => a - b);
+        const p90 = steps[Math.min(steps.length - 1, Math.floor(steps.length * 0.9))];
+        dyn = Math.max(dynThresholdFloor, p90 * dynThresholdMul);
+      }
+    }
+    if (peak && Math.abs(peak) >= dyn) big2h.push({ s, p: peak, thr: dyn });
+  }
 
   // quiet gate: max move since the last digest
   let moveMax = 0;
@@ -387,7 +443,7 @@ Deno.serve(async (req) => {
   }).filter(Boolean).join("\n\n");
 
   const alertBlock = big2h.length
-    ? `<b>🚨 نوسانِ ۲ ساعته</b>\n${big2h.map((a) => `${NAME[a.s]} ${a.p > 0 ? "▲" : "▼"}${FA(Math.abs(a.p).toFixed(1))}٪`).join("\n")}`
+    ? `<b>🚨 نوسانِ ${volatilityWindowMin === 60 ? "1 ساعته" : `${volatilityWindowMin} ساعته`}</b>\n${big2h.map((a) => `${NAME[a.s]} ${a.p > 0 ? "▲" : "▼"}${decTxt(Math.abs(a.p))}%`).join("\n")}`
     : "";
 
   let tg: any = null;
@@ -401,6 +457,9 @@ Deno.serve(async (req) => {
       const parts = [`📅 ${market.date_shamsi}\n🕐 ساعت ${FA(market.time)}`];
       parts.push(sectionBlock);
       if (alertBlock) parts.push(alertBlock);
+      if (stale.length) {
+        parts.push(`<b>⚠️ منبع بی‌خبر</b>\n${stale.map((x) => `${NAME[x.s]} — ${intTxt(x.flat)} چرخهٔ پیاپی بدون تغییر`).join("\n")}`);
+      }
       parts.push(`<code>به‌روزرسانی بعدی: ${FA(cycleMin)} دقیقه دیگه</code>`);
       tg = await sendTelegram(parts.join("\n\n"));
       sentDigest = tg?.ok === true;
@@ -421,11 +480,23 @@ Deno.serve(async (req) => {
   let gh = null;
   try {
     const ch = ["usd", "eur", "aed", "gold_18k", "coin_emami", "gold_ounce", "silver_gram", "oil"];
-    const lastN = "last90";
+  // Evenly pick at most `n` points, always keeping the newest one.
+function downsample<T>(arr: T[], n: number): T[] {
+  if (arr.length <= n) return arr;
+  const out: T[] = [];
+  const step = (arr.length - 1) / (n - 1);
+  for (let i = 0; i < n; i++) out.push(arr[Math.round(i * step)]);
+  return out;
+}
+
+  const lastN = "last90";
     const hist: Record<string, any[]> = {};
     for (const s of ch) {
-      const h = await rest(`rate_history?symbol=eq.${s}&select=ts,price&order=ts.desc&limit=90`);
-      hist[s] = (h ?? []).map((x) => ({ ts: x.ts, price: x.price }));
+      // Sample across the whole window, not just the newest N rows: 90 evenly
+      // spaced points over 90 days, so the chart shows real history instead of
+      // a couple of days that happen to be in the table.
+      const h90 = await rest(`rate_history?symbol=eq.${s}&ts=gte.${new Date(now.getTime() - 90 * 864e5).toISOString()}&select=ts,price&order=ts.asc&limit=2000`);
+      hist[s] = downsample((h90 ?? []).map((x) => ({ ts: x.ts, price: Number(x.price) })), 90);
     }
     const payload = JSON.stringify({ updated_at: now.toISOString(), date_shamsi: market.date_shamsi, market, history: hist });
     const ghPath = Deno.env.get("GH_DATA_PATH") ?? "web/data.json";
