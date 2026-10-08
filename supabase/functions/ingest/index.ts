@@ -96,6 +96,22 @@ async function fetchUsdFromAedPeg(): Promise<number | null> {
   return Math.round(aedToman / usdRate);
 }
 
+// درهم امارات (تومان). همان صفحه‌ای که fetchUsdFromAedPeg برای نرخِ برج پگ می‌خواند،
+// پس قیمتِ مستقیمِ درهم را از همان می‌گیریم — بدون درخواستِ اضافه.
+async function fetchAed(): Promise<number | null> {
+  const html = await get("https://alanchand.com/en/currencies-price/aed");
+  for (const c of jsonLd(html)) {
+    if (c["@type"] === "Product" && c.sku === "AED") {
+      const p = Number(c?.offers?.price ?? 0);
+      if (p > 0) return Math.round(p / 10);
+    }
+  }
+  const raw =
+    attr(html, /<input[^>]*data-curr=["']tmn["'][^>]*data-price=["']([\d,.]+)["']/i) ??
+    attr(html, /<input[^>]*data-curr=["']tmn["'][^>]*value=["']([\d,.]+)["']/i);
+  return raw ? Math.round(Number(raw.replace(/,/g, "")) / 10) : null;
+}
+
 async function fetchEur(): Promise<number | null> {
   const html = await get("https://alanchand.com/en/currencies-price/eur");
   for (const c of jsonLd(html)) {
@@ -217,8 +233,8 @@ const FA = (s: string) =>
   String(s).replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]).replace(/\./g, "٫").replace(/,/g, "٬");
 const faInt = (n: number) => FA(Math.round(n).toLocaleString("en-US"));
 const faDec = (n: number) => FA(n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-const EMO: Record<string, string> = { usd: "💵", eur: "🇪🇺", gold_18k: "✨", coin_emami: "🪙", gold_ounce: "🌐", silver_ounce: "🥈", silver_gram: "🥈", oil: "⛽" };
-const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", gold_18k: "طلای ۱۸ع", coin_emami: "سکه امامی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ ۹۲۵ (هر گرم)", oil: "نفت برنت" };
+const EMO: Record<string, string> = { usd: "💵", eur: "🇪🇺", aed: "🇦🇪", gold_18k: "✨", coin_emami: "🪙", gold_ounce: "🌐", silver_ounce: "🥈", silver_gram: "🥈", oil: "⛽" };
+const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", aed: "درهم", gold_18k: "طلای ۱۸ع", coin_emami: "سکه امامی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ ۹۲۵ (هر گرم)", oil: "نفت برنت" };
 
 async function sendTelegram(text: string) {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
@@ -257,12 +273,13 @@ async function ghCommit(path: string, content: string, msg: string): Promise<boo
 Deno.serve(async (req) => {
   const started = Date.now();
   const wantsTest = new URL(req.url).searchParams.get("test") === "1";
-  const market: Record<string, any> = { usd: null, eur: null, gold_18k: null, gold_mesghal: null, gold_ounce: null, silver_ounce: null, silver_gram: null, coin_emami: null, coin_bahar: null, coin_half: null, coin_quarter: null, coin_gram: null, oil: null };
+  const market: Record<string, any> = { usd: null, eur: null, aed: null, gold_18k: null, gold_mesghal: null, gold_ounce: null, silver_ounce: null, silver_gram: null, coin_emami: null, coin_bahar: null, coin_half: null, coin_quarter: null, coin_gram: null, oil: null };
   const errors: string[] = [];
 
   const jobs: Promise<void>[] = [];
   jobs.push(fetchUsdFromAedPeg().then((v) => (market.usd = v)).catch((e) => errors.push(`usd: ${e.message}`)));
   jobs.push(fetchEur().then((v) => (market.eur = v)).catch((e) => errors.push(`eur: ${e.message}`)));
+  jobs.push(fetchAed().then((v) => (market.aed = v)).catch((e) => errors.push(`aed: ${e.message}`)));
   jobs.push(fetchGoldAndCoins().then((d) => Object.assign(market, d)).catch((e) => errors.push(`gold: ${e.message}`)));
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
   const silverPromise = fetchSilver925FromTgju();
@@ -307,7 +324,7 @@ Deno.serve(async (req) => {
 
   // snapshot + history  (only the real numeric columns go to the table;
   // updated_iso/date/time live inside `payload` only)
-  const FIELDS = ["usd", "eur", "gold_18k", "gold_mesghal", "gold_ounce", "silver_ounce", "silver_gram", "coin_emami", "coin_bahar", "coin_half", "coin_quarter", "coin_gram", "oil"] as const;
+  const FIELDS = ["usd", "eur", "aed", "gold_18k", "gold_mesghal", "gold_ounce", "silver_ounce", "silver_gram", "coin_emami", "coin_bahar", "coin_half", "coin_quarter", "coin_gram", "oil"] as const;
   const row: Record<string, any> = { id: 1, updated_at: now.toISOString(), payload: market };
   for (const f of FIELDS) row[f] = market[f];
   await rest("market?on_conflict=id", {
@@ -316,7 +333,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify(row),
   });
 
-  const watched = ["usd", "eur", "gold_18k", "coin_emami", "gold_ounce", "silver_gram", "oil"];
+  const watched = ["usd", "eur", "aed", "gold_18k", "coin_emami", "gold_ounce", "silver_gram", "oil"];
   const rows = watched.filter((s) => market[s] !== null).map((s) => ({
     symbol: s, price: Number(market[s]), ts: now.toISOString(),
   }));
@@ -356,7 +373,7 @@ Deno.serve(async (req) => {
   for (const s of watched) { const lp = lastPrice(s); const c = Number(market[s]); if (lp && c) moveMax = Math.max(moveMax, Math.abs((c - lp) / lp) * 100); }
 
   const SECTIONS = [
-    { t: "💵 ارزها", s: ["usd", "eur"] },
+    { t: "💵 ارزها", s: ["usd", "eur", "aed"] },
     { t: "🥇 طلا و سکه", s: ["gold_18k", "gold_ounce", "coin_emami"] },
     { t: "🥈 نقره", s: ["silver_gram"] },
     { t: "⛽ انرژی", s: ["oil"] },
@@ -403,7 +420,7 @@ Deno.serve(async (req) => {
   // keep the GitHub Pages mirror live (github.io copy of the dashboard)
   let gh = null;
   try {
-    const ch = ["usd", "eur", "gold_18k", "coin_emami", "gold_ounce", "silver_gram", "oil"];
+    const ch = ["usd", "eur", "aed", "gold_18k", "coin_emami", "gold_ounce", "silver_gram", "oil"];
     const lastN = "last90";
     const hist: Record<string, any[]> = {};
     for (const s of ch) {
