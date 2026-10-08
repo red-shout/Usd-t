@@ -19,7 +19,7 @@ FILES = [
     ("supabase/sync_repo.py",               "supabase/sync_repo.py", "main"),
     ("LIVE.md",                              "LIVE.md", "main"),
     ("README.md",                            "README.md", "main"),
-    ("web/index.html",                       "ghdashboard/index.html", "live"),
+    ("web/index.html",                       "ghdashboard/index.html.tpl", "live"),
 ]
 
 def get(url, raw=False):
@@ -30,7 +30,11 @@ def get(url, raw=False):
 
 for repo_path, local, branch in FILES:
     full = os.path.join(ROOT, local)
-    b64 = base64.b64encode(open(full, "rb").read()).decode()
+    raw = open(full, "rb").read()
+    # SAFETY: never push an empty file — a bare PUT once blanked live:index.html.
+    if not raw.strip():
+        raise SystemExit(f"ABORT: {local} is empty - refusing to push a blank file")
+    b64 = base64.b64encode(raw).decode()
     sha = ""
     try:
         sha = get(API + repo_path + "?ref=" + branch).get("sha", "")
