@@ -19,7 +19,7 @@ FILES = [
     ("supabase/sync_repo.py",               "supabase/sync_repo.py", "main"),
     ("LIVE.md",                              "LIVE.md", "main"),
     ("README.md",                            "README.md", "main"),
-    ("web/index.html",                       "ghdashboard/index.html.tpl", "live"),
+    ("index.html", "ghdashboard/index.html.tpl", "live"),
 ]
 
 def get(url, raw=False):
