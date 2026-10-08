@@ -238,7 +238,7 @@ const faDec = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 
 const intTxt = (n: number) => Math.round(n).toLocaleString("en-US");
 const decTxt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const EMO: Record<string, string> = { usd: "💵", eur: "🇪🇺", aed: "🇦🇪", gold_18k: "✨", coin_emami: "🪙", gold_ounce: "🌐", silver_ounce: "🥈", silver_gram: "🥈", oil: "⛽" };
-const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", aed: "درهم", gold_18k: "طلای ۱۸ع", coin_emami: "سکه امامی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ ۹۲۵ (هر گرم)", oil: "نفت برنت" };
+const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", aed: "درهم", gold_18k: "طلای 18ع", coin_emami: "سکه امامی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ 925 (هر گرم)", oil: "نفت برنت" };
 
 async function sendTelegram(text: string) {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
