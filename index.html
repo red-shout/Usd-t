@@ -32,17 +32,17 @@
 <main><div class="grid" id="grid"></div>
 <div class="panel"><h2>روند <span id="chartName">دلار آمریکا</span></h2>
 <div class="sub" id="chartSub">—</div><div class="tabs" id="tabs"></div><div id="chartWrap"></div></div></main>
-<footer>داده‌ها هر ۱۵ دقیقه از Supabase به‌روزرسانی می‌شوند · دادهٔ بایگانی: <span id="boot"></span></footer>
+<footer>داده‌ها هر 15 دقیقه از Supabase به‌روزرسانی می‌شوند · دادهٔ بایگانی: <span id="boot"></span></footer>
 <script>
 const FALLBACK=null;
 const CARDS=[["usd","🇺🇸","دلار آمریکا","toman"],["eur","🇪🇺","یورو اروپا","toman"],["aed","🇦🇪","درهم امارات","toman"],
-["gold_18k","✨","طلای ۱۸ عیار","toman"],["gold_mesghal","⚖️","مثقال طلا","toman"],
-["gold_ounce","🌐","انس جهانی طلا","usd"],["silver_ounce","🥈","انس جهانی نقره","usd"],["silver_gram","🥈","نقرهٔ ۹۲۵ (هر گرم)","toman"],["coin_emami","🟡","سکه امامی","toman"],
+["gold_18k","✨","طلای 18 عیار","toman"],["gold_mesghal","⚖️","مثقال طلا","toman"],
+["gold_ounce","🌐","انس جهانی طلا","usd"],["silver_ounce","🥈","انس جهانی نقره","usd"],["silver_gram","🥈","نقرهٔ 925 (هر گرم)","toman"],["coin_emami","🟡","سکه امامی","toman"],
 ["coin_bahar","🟡","سکه بهار آزادی","toman"],["coin_half","🟡","نیم‌سکه","toman"],
 ["coin_quarter","🟡","ربع‌سکه","toman"],["coin_gram","🟡","سکه گرمی","toman"],
 ["oil","⛽","نفت برنت","usd"]];
 const CHARTABLE=["usd","eur","aed","gold_18k","coin_emami","gold_ounce","silver_ounce","silver_gram","oil"];
-const FA=s=>String(s).replace(/\d/g,d=>"۰۱۲۳۴۵۶۷۸۹"[d]);
+const FA=s=>String(s);  // digits stay Latin everywhere
 const NF=n=>FA(Math.round(n).toLocaleString("en-US"));
 let cur="usd",data=FALLBACK||{market:{},history:{}};
 function curData(){return data.history&&data.history[cur]?data:{market:data.market||{},history:{[cur]:[]}}}
@@ -54,7 +54,7 @@ function render(){
  document.getElementById("grid").innerHTML=CARDS.map(([k,ico,lbl,unit])=>{
    const v=m[k];const shown=v==null?"—":(unit==="toman"?NF(v)+" <small style='font-size:12px;color:#8fa3c8'>تومان</small>":FA(v)+" <small style='font-size:12px;color:#8fa3c8'>دلار</small>");
    const chg=k===cur?pct(cd):null;
-   return `<div class="card"><div class="lbl">${ico} ${lbl}</div><div class="val">${shown}</div>${chg===null?"":`<div class="chg ${chg>=0?"up":"down"}">${chg>=0?"▲":"▼"} ${FA(Math.abs(chg).toFixed(2))}٪</div>`}</div>`;
+   return `<div class="card"><div class="lbl">${ico} ${lbl}</div><div class="val">${shown}</div>${chg===null?"":`<div class="chg ${chg>=0?"up":"down"}">${chg>=0?"▲":"▼"} ${Math.abs(chg).toFixed(2)}%</div>`}</div>`;
  }).join("");
  chart();
 }
@@ -75,7 +75,7 @@ function chart(){
   const d=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Tehran",month:"2-digit",day:"2-digit"}).format(x.t);
   return `<text x="${X(i).toFixed(1)}" y="${H-8}" fill="#6f83a8" font-size="10" text-anchor="middle">${d}</text>`;}).join("");
  const li=h.length-1;
- document.getElementById("chartSub").textContent=`${h.length} نقطه · کمینه ${NF(min)} · بیشینه ${NF(max)} · تغییر کل ${FA(Math.abs(pct(cd)).toFixed(2))}٪`;
+ document.getElementById("chartSub").textContent=`${h.length} نقطه · کمینه ${NF(min)} · بیشینه ${NF(max)} · تغییر کل ${Math.abs(pct(cd)).toFixed(2)}%`;
  w.innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}
  <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#3b82f6" stop-opacity=".38"/><stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/></linearGradient></defs>
  <path d="${area}" fill="url(#g)"/><path d="${line}" fill="none" stroke="#60a5fa" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
