@@ -373,10 +373,10 @@ Deno.serve(async (req) => {
   for (const s of watched) { const lp = lastPrice(s); const c = Number(market[s]); if (lp && c) moveMax = Math.max(moveMax, Math.abs((c - lp) / lp) * 100); }
 
   const SECTIONS = [
-    { t: "💵 ارزها", s: ["usd", "eur", "aed"] },
-    { t: "🥇 طلا و سکه", s: ["gold_18k", "gold_ounce", "coin_emami"] },
-    { t: "🥈 نقره", s: ["silver_gram"] },
-    { t: "⛽ انرژی", s: ["oil"] },
+    { t: "#ارزها", s: ["usd", "eur", "aed"] },
+    { t: "#طلاوسکه", s: ["gold_18k", "gold_ounce", "coin_emami"] },
+    { t: "#نقره", s: ["silver_gram"] },
+    { t: "#انرژی", s: ["oil"] },
   ];
   const sectionBlock = SECTIONS.map(({ t, s }) => {
     const lines = s.filter((x) => market[x] !== null).map((x) => {
