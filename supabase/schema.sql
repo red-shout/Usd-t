@@ -6,6 +6,7 @@ create table if not exists public.market (
   id           int primary key default 1 check (id = 1),
   usd          bigint,
   eur          bigint,
+  aed          bigint,
   gold_18k     bigint,
   gold_mesghal bigint,
   gold_ounce   numeric,
