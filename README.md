@@ -10,7 +10,7 @@
 <br/>
 
 > [!NOTE]
-> 📅 **تاریخ:** ۱۷ مهر ۱۴۰۵ (2026-10-09) &nbsp;|&nbsp; ⏱ **ساعت آخرین بروزرسانی:** **۱۸:۴۴** (به وقت تهران)
+> 📅 **تاریخ:** ۱۷ مهر ۱۴۰۵ (2026-10-09) &nbsp;|&nbsp; ⏱ **ساعت آخرین بروزرسانی:** **۲۳:۴۸** (به وقت تهران)
 
 <br/>
 
@@ -37,22 +37,22 @@
 <tr>
 <td align="center">🇺🇸</td>
 <td><b>دلار آمریکا</b></td>
-<td align="left"><b>۲۶۹،۲۱۶ تومان</b></td>
+<td align="left"><b>۲۶۸،۹۱۵ تومان</b></td>
 </tr>
 <tr>
 <td align="center">🇪🇺</td>
 <td><b>یورو اروپا</b></td>
-<td align="left"><b>۳۰۱،۴۰۰ تومان</b></td>
+<td align="left"><b>۳۰۱،۲۰۰ تومان</b></td>
 </tr>
 <tr>
 <td align="center">🇦🇪</td>
 <td><b>درهم امارات</b></td>
-<td align="left"><b>۷۳،۳۰۰ تومان</b></td>
+<td align="left"><b>۷۳،۲۱۰ تومان</b></td>
 </tr>
 <tr>
 <td align="center">🇹🇷</td>
 <td><b>لیر ترکیه</b></td>
-<td align="left"><b>۵،۵۴۰ تومان</b></td>
+<td align="left"><b>۵،۵۳۰ تومان</b></td>
 </tr>
 <tr>
 <td align="center">🇬🇧</td>
@@ -62,12 +62,12 @@
 <tr>
 <td align="center">🇨🇦</td>
 <td><b>دلار کانادا</b></td>
-<td align="left"><b>۱۸۸،۶۰۰ تومان</b></td>
+<td align="left"><b>۱۸۸،۵۰۰ تومان</b></td>
 </tr>
 <tr>
 <td align="center">🇦🇺</td>
 <td><b>دلار استرالیا</b></td>
-<td align="left"><b>۱۸۷،۸۰۰ تومان</b></td>
+<td align="left"><b>۱۸۷،۹۰۰ تومان</b></td>
 </tr>
 <tr>
 <td align="center">🇨🇳</td>
@@ -107,17 +107,17 @@
 <tr>
 <td align="center">✨</td>
 <td><b>طلای ۱۸ عیار (هر گرم)</b></td>
-<td align="left"><b>۲۶،۴۷۸،۶۰۰ تومان</b></td>
+<td align="left"><b>۲۶،۵۰۸،۶۱۰ تومان</b></td>
 </tr>
 <tr>
 <td align="center">⚖️</td>
 <td><b>مثقال طلا (آبشده)</b></td>
-<td align="left"><b>۱۱۴،۷۰۰،۰۰۰ تومان</b></td>
+<td align="left"><b>۱۱۴،۸۳۰،۰۰۰ تومان</b></td>
 </tr>
 <tr>
 <td align="center">🌐</td>
 <td><b>انس جهانی طلا</b></td>
-<td align="left"><b>۴،۱۸۳.۷۵ دلار</b></td>
+<td align="left"><b>۴،۱۹۴.۶۲ دلار</b></td>
 </tr>
 
 <!-- کامودیتی -->
@@ -127,7 +127,7 @@
 <tr>
 <td align="center">⛽</td>
 <td><b>نفت خام برنت / اوپک</b></td>
-<td align="left"><b>۹۱.۷۷ دلار</b></td>
+<td align="left"><b>۹۱.۵۹ دلار</b></td>
 </tr>
 
 </tbody>
