@@ -237,8 +237,8 @@ const faDec = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 
 // price text, no digit substitution
 const intTxt = (n: number) => Math.round(n).toLocaleString("en-US");
 const decTxt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const EMO: Record<string, string> = { usd: "💵", eur: "🇪🇺", aed: "🇦🇪", gold_18k: "✨", coin_emami: "🪙", gold_ounce: "🌐", silver_ounce: "🥈", silver_gram: "🥈", oil: "⛽" };
-const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", aed: "درهم", gold_18k: "طلای 18ع", coin_emami: "سکه امامی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ 925 (هر گرم)", oil: "نفت برنت" };
+const EMO: Record<string, string> = { usd: "💵", eur: "🇪🇺", aed: "🇦🇪", gold_18k: "✨", gold_mesghal: "⚖️", coin_emami: "🪙", coin_gram: "🪙", gold_ounce: "🌐", silver_ounce: "🥈", silver_gram: "🥈", oil: "⛽" };
+const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", aed: "درهم", gold_18k: "طلای 18ع", gold_mesghal: "مثقال طلا", coin_emami: "سکه امامی", coin_gram: "سکه گرمی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ 925 (هر گرم)", oil: "نفت برنت" };
 
 async function sendTelegram(text: string) {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
@@ -337,7 +337,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify(row),
   });
 
-  const watched = ["usd", "eur", "aed", "gold_18k", "coin_emami", "gold_ounce", "silver_gram", "oil"];
+  const watched = ["usd", "eur", "aed", "gold_18k", "gold_mesghal", "coin_emami", "coin_gram", "gold_ounce", "silver_gram", "oil"];
   const rows = watched.filter((s) => market[s] !== null).map((s) => ({
     symbol: s, price: Number(market[s]), ts: now.toISOString(),
   }));
@@ -356,7 +356,6 @@ Deno.serve(async (req) => {
   // should not fire on its ordinary noise, while an active one (usd) should.
   const dynThresholdMul = Number(Deno.env.get("ALERT_DYN_MUL") ?? "1.6");
   const dynThresholdFloor = Number(Deno.env.get("ALERT_DYN_FLOOR") ?? "0.35");
-  const staleCycles = Number(Deno.env.get("ALERT_STALE_CYCLES") ?? "3");
 
   const allStates = [...watched, "cycle"];
   const state = await rest(`alert_state?symbol=in.(${allStates.join(",")})&select=symbol,last_price,last_alert_ts`);
@@ -381,18 +380,6 @@ Deno.serve(async (req) => {
   const rowsWin = await rest(`rate_history?symbol=in.(${watched.join(",")})&ts=gte.${new Date(now.getTime() - winMs).toISOString()}&select=symbol,price,ts&order=ts.asc&limit=2000`);
   const bySym: Record<string, { p: number; t: string }[]> = {};
   for (const r of rowsWin ?? []) (bySym[r.symbol] ??= []).push({ p: Number(r.price), t: r.ts });
-
-  // Stale-feed detection: a symbol whose last N polls are byte-identical is
-  // almost certainly a dead source, not a calm market. Silence must not be
-  // reported as "no news".
-  const stale: { s: string; flat: number }[] = [];
-  for (const s of watched) {
-    const arr = (bySym[s] ?? []).filter((x) => Number.isFinite(x.p));
-    if (arr.length < staleCycles) continue;
-    const tail = arr.slice(-staleCycles);
-    const base = arr[arr.length - 1 - staleCycles];
-    if (base && tail.every((x) => x.p === base.p)) stale.push({ s, flat: staleCycles });
-  }
 
   const big2h: { s: string; p: number; thr: number }[] = [];
   for (const s of watched) {
@@ -430,7 +417,7 @@ Deno.serve(async (req) => {
 
   const SECTIONS = [
     { t: "#ارزها", s: ["usd", "eur", "aed"] },
-    { t: "#طلاوسکه", s: ["gold_18k", "gold_ounce", "coin_emami"] },
+    { t: "#طلاوسکه", s: ["gold_18k", "gold_mesghal", "gold_ounce", "coin_emami", "coin_gram"] },
     { t: "#نقره", s: ["silver_gram"] },
     { t: "#انرژی", s: ["oil"] },
   ];
@@ -457,9 +444,6 @@ Deno.serve(async (req) => {
       const parts = [`📅 ${market.date_shamsi}\n🕐 ساعت ${FA(market.time)}`];
       parts.push(sectionBlock);
       if (alertBlock) parts.push(alertBlock);
-      if (stale.length) {
-        parts.push(`<b>⚠️ منبع بی‌خبر</b>\n${stale.map((x) => `${NAME[x.s]} — ${intTxt(x.flat)} چرخهٔ پیاپی بدون تغییر`).join("\n")}`);
-      }
       parts.push(`<code>به‌روزرسانی بعدی: ${FA(cycleMin)} دقیقه دیگه</code>`);
       tg = await sendTelegram(parts.join("\n\n"));
       sentDigest = tg?.ok === true;
