@@ -177,10 +177,53 @@ async function fetchGoldAndCoins(): Promise<Record<string, number | string>> {
   return data;
 }
 
+// Single TradingView symbol quote via the public scanner endpoint (15s timeout).
+async function tvClose(id: string): Promise<number | null> {
+  const url = `https://scanner.tradingview.com/symbol?symbol=${encodeURIComponent(id)}&fields=close&no_404=true`;
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const r = await fetch(url, {
+      headers: { "user-agent": UA, "accept": "application/json", "origin": "https://www.tradingview.com", "referer": "https://www.tradingview.com/" },
+      signal: ctl.signal,
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const v = j?.close;
+    return v != null && Number(v) > 0 ? Number(v) : null;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function fetchOil(): Promise<string | null> {
-  const html = await get("https://oilprice.com/oil-price-charts/46");
-  const m = html.match(/class=["'][^"']*last_price[^"']*["'][^>]*>([\s\S]{0,120}?)</i);
-  return m ? m[1].replace(/<[^>]+>/g, "").trim() : null;
+  // Brent Crude (Cash). Previously this silently returned WTI (~104) while the
+  // line was labelled "نفت برنت" — about 8% low. Try the requested instrument
+  // first (BlackBull's Brent Cash), then a reachable Brent cash CFD, then Brent
+  // futures, then Yahoo Brent. First positive value wins.
+  const tv = ["BLACKBULL:BRENT", "FX:UKOIL", "NYMEX:BZ1!", "ICEEUR:BRN1!"];
+  for (const id of tv) {
+    const v = await tvClose(id);
+    if (v) return v.toFixed(2);
+  }
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const r = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/BZ=F?interval=1d&range=1d", {
+      headers: { "user-agent": UA },
+      signal: ctl.signal,
+    });
+    if (r.ok) {
+      const j = await r.json();
+      const p = j?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (p != null && Number(p) > 0) return Number(p).toFixed(2);
+    }
+  } catch (_) { /* no source available */ } finally {
+    clearTimeout(t);
+  }
+  return null;
 }
 
 // نقرهٔ ۹۲۵ (هر گرم، تومان) — منبعِ اصلی: tgju (بازارِ محلی). با retry برای عبور از rate-limit.
@@ -356,6 +399,10 @@ Deno.serve(async (req) => {
   // should not fire on its ordinary noise, while an active one (usd) should.
   const dynThresholdMul = Number(Deno.env.get("ALERT_DYN_MUL") ?? "1.6");
   const dynThresholdFloor = Number(Deno.env.get("ALERT_DYN_FLOOR") ?? "0.35");
+  // Heartbeat floor: even in a completely calm market, guarantee a digest if
+  // nothing has been sent for this many hours. Prevents the "5 hours of
+  // silence" feeling like the system is dead. 0 disables the floor.
+  const floorHours = Number(Deno.env.get("ALERT_FLOOR_H") ?? "8");
 
   const allStates = [...watched, "cycle"];
   const state = await rest(`alert_state?symbol=in.(${allStates.join(",")})&select=symbol,last_price,last_alert_ts`);
@@ -439,7 +486,11 @@ Deno.serve(async (req) => {
     tg = await sendTelegram(`✅ <b>پالس بازار</b> — پیام تستی\n📅 ${market.date_shamsi} · دلار ${market.usd ? faInt(market.usd) : "—"} تومان`);
   } else {
     const hasBaseline = watched.some((s) => lastPrice(s) != null);
-    const quiet = hasBaseline && moveMax < quietPct && big2h.length === 0;
+    // quiet = market has moved less than quietPct since the last cycle AND no
+    // 1h spike. The floor override forces a heartbeat if we've been silent for
+    // floorHours, so a calm market never means "forever no message".
+    const floorElapsed = floorHours > 0 && (now.getTime() - lastCycleTs) >= floorHours * 3600 * 1000;
+    const quiet = hasBaseline && moveMax < quietPct && big2h.length === 0 && !floorElapsed;
     if (due && !quiet) {
       const parts = [`📅 ${market.date_shamsi}\n🕐 ساعت ${FA(market.time)}`];
       parts.push(sectionBlock);
