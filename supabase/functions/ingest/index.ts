@@ -198,15 +198,67 @@ async function tvClose(id: string): Promise<number | null> {
   }
 }
 
+// Which oil source actually supplied the price this run (for verification).
+let OIL_SRC = "none";
+// Raw responses from the BlackBull candidates, only surfaced when ?debug_oil=1.
+let OIL_DEBUG: string[] = [];
+
+// BLACKBULL:BRENT = "Crude Oil Brent (Cash)", a Commodity CFD listed on the
+// BLACKBULL OTC exchange. It is NOT in the public scanner API, but TradingView's
+// chart-data endpoint serves it. This box SNI-blocks data.tradingview.com, so it
+// may be unreachable here — but the Supabase edge (clean network) can reach it.
+async function fetchBlackBullBrent(): Promise<number | null> {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const from = nowSec - 86400 * 7;
+  const headers = {
+    "user-agent": UA,
+    "accept": "application/json",
+    "origin": "https://www.tradingview.com",
+    "referer": "https://www.tradingview.com/",
+  };
+  const candidates = [
+    `https://data.tradingview.com/BLACKBULL/BRENT/intraday_data?period=0&resolution=D&from=${from}&to=${nowSec}`,
+    "https://data.tradingview.com/BLACKBULL/BRENT/",
+  ];
+  for (const url of candidates) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 15000);
+    try {
+      const r = await fetch(url, { headers, signal: ctl.signal });
+      const bodyText = await r.text();
+      OIL_DEBUG.push(`${new URL(url).pathname}?... -> HTTP ${r.status} | ${bodyText.slice(0, 240)}`);
+      if (!r.ok) continue;
+      const j = JSON.parse(bodyText);
+      const rows: any[] = j?.d;
+      if (!Array.isArray(rows) || rows.length === 0) continue;
+      const last = rows[rows.length - 1];
+      const cols: string[] | null = Array.isArray(j?.c) ? j.c : null;
+      let ci = cols ? cols.lastIndexOf("c") : 4; // daily [ts,o,h,l,c,v] -> close=4
+      if (ci < 0) ci = 4;
+      const close = Number(last[ci]);
+      // sanity: Brent cash lives in a wide band; reject a wrong-field parse
+      if (Number.isFinite(close) && close > 30 && close < 500) return close;
+    } catch (e) {
+      OIL_DEBUG.push(`fetch threw: ${(e as Error).name}`);
+      /* unreachable -> next candidate */
+    } finally {
+      clearTimeout(t);
+    }
+  }
+  return null;
+}
+
 async function fetchOil(): Promise<string | null> {
   // Brent Crude (Cash). Previously this silently returned WTI (~104) while the
-  // line was labelled "نفت برنت" — about 8% low. Try the requested instrument
-  // first (BlackBull's Brent Cash), then a reachable Brent cash CFD, then Brent
-  // futures, then Yahoo Brent. First positive value wins.
-  const tv = ["BLACKBULL:BRENT", "FX:UKOIL", "NYMEX:BZ1!", "ICEEUR:BRN1!"];
+  // line was labelled "نفت برنت" — about 8% low. Priority: the requested
+  // BlackBull cash feed, then a reachable Brent cash CFD, then Brent futures,
+  // then Yahoo Brent. First positive value wins.
+  const bb = await fetchBlackBullBrent();
+  if (bb) { OIL_SRC = "BLACKBULL:BRENT (data.tradingview.com)"; return bb.toFixed(3); }
+  const tv = ["FX:UKOIL", "NYMEX:BZ1!", "ICEEUR:BRN1!"];
   for (const id of tv) {
     const v = await tvClose(id);
-    if (v) return v.toFixed(2);
+    if (v) { OIL_SRC = id; return v.toFixed(2); }
   }
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 15000);
@@ -218,7 +270,7 @@ async function fetchOil(): Promise<string | null> {
     if (r.ok) {
       const j = await r.json();
       const p = j?.chart?.result?.[0]?.meta?.regularMarketPrice;
-      if (p != null && Number(p) > 0) return Number(p).toFixed(2);
+      if (p != null && Number(p) > 0) { OIL_SRC = "Yahoo BZ=F"; return Number(p).toFixed(2); }
     }
   } catch (_) { /* no source available */ } finally {
     clearTimeout(t);
@@ -320,6 +372,7 @@ async function ghCommit(path: string, content: string, msg: string): Promise<boo
 Deno.serve(async (req) => {
   const started = Date.now();
   const wantsTest = new URL(req.url).searchParams.get("test") === "1";
+  const wantsDebugOil = new URL(req.url).searchParams.get("debug_oil") === "1";
   const market: Record<string, any> = { usd: null, eur: null, aed: null, gold_18k: null, gold_mesghal: null, gold_ounce: null, silver_ounce: null, silver_gram: null, coin_emami: null, coin_bahar: null, coin_half: null, coin_quarter: null, coin_gram: null, oil: null };
   const errors: string[] = [];
 
@@ -541,6 +594,7 @@ function downsample<T>(arr: T[], n: number): T[] {
 
   return new Response(JSON.stringify({
     ok: true, ms: Date.now() - started, market, errors,
-    history_rows: rows.length, digest_sent: sentDigest, telegram: tg, github: gh,
+    history_rows: rows.length, digest_sent: sentDigest, telegram: tg, github: gh, oil_source: OIL_SRC,
+    ...(wantsDebugOil ? { oil_debug: OIL_DEBUG } : {}),
   }, null, 2), { headers: { "Content-Type": "application/json" } });
 });
