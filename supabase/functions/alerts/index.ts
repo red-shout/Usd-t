@@ -238,12 +238,12 @@ async function fetchOpenMeteoAlerts(): Promise<{ key: string; text: string }[]> 
 //     (api.mahsaalert.app/api/v1/features/feed — their own client polls it
 //     every 30s; rate limit 800/min). Scope (Hamed, 2026-11-09): all of
 //     Iran, layers 32 (حملات), 13 (حملات - ج۱۲روزه), 14 (هشدار تخلیه -
-//     ج۱۲روزه) only, ANY verification tag — the tag is always shown in
-//     the message, never hidden. Detail per fresh item gives the Persian
+//     ج۱۲روزه), 42 (گزارش میدانی) only, ANY verification tag — the tag is
+//     always shown in the message, never hidden. Detail per fresh item gives the Persian
 //     description (info is a JSON string), city/province, coordinates.
 
 // ---------------------------------------------------------------- mahsaalert
-const MAHSA_LAYERS: Record<number, string> = { 32: "حملات", 13: "حملات - ج۱۲روزه", 14: "هشدار تخلیه - ج۱۲روزه" };
+const MAHSA_LAYERS: Record<number, string> = { 32: "حملات", 13: "حملات - ج۱۲روزه", 14: "هشدار تخلیه - ج۱۲روزه", 42: "گزارش میدانی" };
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
