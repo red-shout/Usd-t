@@ -81,7 +81,10 @@ async function noteSourceDown(kind: string, detail: string): Promise<void> {
     const rows = await rest(`alert_state?symbol=eq.${encodeURIComponent(sym)}&select=last_alert_ts`) as any[];
     const last = rows?.[0]?.last_alert_ts ? Date.parse(rows[0].last_alert_ts) : 0;
     if (Date.now() - last < 6 * 3600 * 1000) return;
-    const r = await sendTG(TG_ALERT_CHAT, `⚠️ <b>پالس بازار — منبع هشدار قطع است</b>\n${kind}: ${detail}\nهشدارهای این منبع تا رفع مشکل منتشر نمی‌شوند.`);
+    // The detail already starts with "<kind>: ..." — strip it so the message
+    // doesn't read "weather: weather: ..." twice.
+    const clean = detail.replace(new RegExp(`^${kind}:\\s*`), "");
+    const r = await sendTG(TG_ALERT_CHAT, `⚠️ <b>پالس بازار — منبع هشدار قطع است</b>\n${kind}: ${clean}\nهشدارهای این منبع تا رفع مشکل منتشر نمی‌شوند.`);
     if (!r.ok) return;
     const body = JSON.stringify({ symbol: sym, last_alert_ts: new Date().toISOString() });
     await rest(`alert_state?on_conflict=symbol`, {
@@ -227,7 +230,7 @@ async function fetchOpenMeteoAlerts(): Promise<{ key: string; text: string }[]> 
   try {
     const url = "https://api.open-meteo.com/v1/forecast?latitude=35.6892,35.84&longitude=51.389,50.9391&hourly=precipitation,wind_gusts_10m,snowfall,weather_code&forecast_days=2&timezone=Asia%2FTehran";
     const r = await fetch(url, { headers: { "user-agent": "pulsar-market/1.0" }, signal: ctl.signal });
-    if (!r.ok) throw new Error(`open-meteo HTTP ${r.status}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = await r.json();
     const locs = Array.isArray(data) ? data : [data];
     // Current hour in Tehran as "YYYY-MM-DDTHH" (Tehran = UTC+3:30).
