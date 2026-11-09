@@ -306,6 +306,45 @@ async function fetchSilver925FromTgju(): Promise<{ v: number | null; err?: strin
   return { v: null, err: lastErr };
 }
 
+// کراس‌چک نقره: قیمت ۹۲۵ از بورس کالا (منبعِ صفحهٔ silver-price الان چند).
+// صفحه قیمتِ شمش ۹۹۹.۹ را می‌دهد؛ ۹۲۵ = همان نرخ × ۰٫۹۲۵. این مقدار فقط برای
+// مقایسه با tgju است — قیمتِ منتشرشده همان tgju می‌ماند، چون قیمتِ بازارِ
+// ۹۲۵ ~۶٪ بالاتر از ارزشِ فلزِ خالص است.
+function faDigitsToNum(s: string): number | null {
+  const en = s.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .replace(/[٬,]/g, "");
+  const n = Number(en);
+  return Number.isFinite(n) ? n : null;
+}
+async function fetchSilver925FromAlanchand(): Promise<{ v: number | null; v999?: number; err?: string }> {
+  const attempts = 2;
+  let lastErr = "unknown";
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 20000);
+      const r = await fetch("https://alanchand.com/silver-price", {
+        headers: { "user-agent": UA, "accept": "text/html" },
+        signal: ctl.signal,
+      });
+      clearTimeout(t);
+      if (!r.ok) { lastErr = `HTTP ${r.status}`; await sleep(3000); continue; }
+      const h = await r.text();
+      // JSON-LD description: "قیمت هر گرم نقرهٔ ۹۹۹ امروز ۴۴۷,۷۲۳ تومان در بورس کالا"
+      const m = h.match(/۹۹۹ امروز\s*([۰-۹٠-٩,٬]+)\s*تومان/) ?? h.match(/نقرهٔ ۹۹۹ امروز\s*([۰-۹٠-٩,٬]+)/);
+      if (!m) { lastErr = "999 price not found in page"; await sleep(3000); continue; }
+      const v999 = faDigitsToNum(m[1]);
+      if (v999 === null || v999 < 100000 || v999 > 2000000) { lastErr = `implausible 999: ${m[1]}`; await sleep(3000); continue; }
+      return { v: Math.round(v999 * 0.925), v999 };
+    } catch (e) {
+      lastErr = (e as Error).name + ":" + (e as Error).message;
+      await sleep(3000);
+    }
+  }
+  return { v: null, err: lastErr };
+}
+
 // ---------------------------------------------------------------- db
 async function rest(path: string, opts: RequestInit = {}): Promise<any> {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -398,6 +437,7 @@ Deno.serve(async (req) => {
   jobs.push(fetchGoldAndCoins().then((d) => Object.assign(market, d)).catch((e) => errors.push(`gold: ${e.message}`)));
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
   const silverPromise = fetchSilver925FromTgju();
+  const silverXPromise = fetchSilver925FromAlanchand();
   await Promise.all(jobs);
   const silverRes = await silverPromise;
 
@@ -481,6 +521,23 @@ Deno.serve(async (req) => {
     }
   }
   if (rejected.length) errors.push(`guardrail rejected: ${rejected.join(" | ")}`);
+
+  // ---- کراس‌چک نقره (۲۰۲۶-۱۱-۰۹): tgju در برابر بورس کالا (الان چند).
+  // نسبتِ عادی ~۱٫۰۶ است (قیمتِ بازارِ ۹۲۵ ~۶٪ بالاتر از ارزشِ فلزِ خالص)؛
+  // اگر از باند خارج شد، یکی از دو منبع دارد اشتباه می‌کند ⇒ خطا (⇒ هشدار).
+  let silverXcheck: { tgju: number; ime_derived: number; ratio: number } | null = null;
+  if (market.silver_gram != null) {
+    const x = await silverXPromise;
+    if (x.v !== null) {
+      const ratio = Number(market.silver_gram) / x.v;
+      silverXcheck = { tgju: Number(market.silver_gram), ime_derived: x.v, ratio: Math.round(ratio * 1000) / 1000 };
+      if (ratio < 0.98 || ratio > 1.15) {
+        errors.push(`silver_xcheck: tgju ${market.silver_gram} vs ime-derived ${x.v} (ratio ${silverXcheck.ratio}, want 0.98-1.15)`);
+      }
+    } else {
+      errors.push(`silver_xcheck: alanchand silver page unavailable (${x.err}), cross-check blind this cycle`);
+    }
+  }
 
   const now = new Date();
   const tehran = new Intl.DateTimeFormat("sv-SE", {
@@ -714,7 +771,7 @@ function downsample<T>(arr: T[], n: number): T[] {
   }
 
   return new Response(JSON.stringify({
-    ok: true, ms: Date.now() - started, market, errors, rejected, alert,
+    ok: true, ms: Date.now() - started, market, errors, rejected, alert, silver_xcheck: silverXcheck,
     history_rows: rows.length, digest_sent: sentDigest, telegram: tg, github: gh, oil_source: OIL_SRC,
     ...(wantsDebugOil ? { oil_debug: OIL_DEBUG } : {}),
   }, null, 2), { headers: { "Content-Type": "application/json" } });
