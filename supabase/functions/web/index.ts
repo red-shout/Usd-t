@@ -107,7 +107,7 @@ const HTML = `<!doctype html>
     <div id="chartWrap"></div>
   </div>
 </main>
-<footer>داده‌ها هر ۳۰ دقیقه به‌روزرسانی می‌شود · API: <code>?format=json&amp;symbol=usd&amp;hours=2160</code></footer>
+<footer>داده‌ها هر ۱۵ دقیقه به‌روزرسانی می‌شود · API: <code>?format=json&amp;symbol=usd&amp;hours=2160</code></footer>
 <script>
 const FA=s=>String(s).replace(/\\d/g,d=>"۰۱۲۳۴۵۶۷۸۹"[d]);
 const NF=n=>FA(Math.round(n).toLocaleString("en-US"));

@@ -170,7 +170,7 @@
 ---
 
 <div align="center">
-<sub>ساخته‌شده با ❤️ توسط <a href="https://t.me/yebekhe">@yebekhe</a> | داده‌ها به صورت خودکار هر ۳۰ دقیقه بروزرسانی می‌شوند</sub>
+<sub>ساخته‌شده با ❤️ توسط <a href="https://t.me/yebekhe">@yebekhe</a> | داده‌ها به صورت خودکار هر ۱۵ دقیقه بروزرسانی می‌شوند</sub>
 </div>
 
 <p align="center">

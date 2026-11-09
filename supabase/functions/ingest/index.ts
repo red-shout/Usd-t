@@ -76,16 +76,14 @@ function toJalali(gy: number, gm: number, gd: number): [number, number, number] 
 }
 
 // ---------------------------------------------------------------- scrapers
+// درهم به دلار، نرخِ ثابتِ (PEG) بانک مرکزی امارات از ۱۹۹۷: 1 USD = 3.6725 AED.
+// قبلاً نرخ را از صفحهٔ aed-usd اسکرِیپ می‌کردیم؛ صفحه عوض شد و regex اول
+// دیگر match نمی‌دهد، پس fallback اولین data-rate (= "1") را می‌گرفت ⇒
+// usdRate=1 ⇒ دلار = قیمتِ درهم (۷۲٬۳۳۰). پگ ثابت است، پس اصلاً اسکرِیپ
+// نمی‌شود — فقط قیمتِ زندهٔ درهم خوانده و در ۳٫۶۷۲۵ ضرب می‌شود.
+const AED_USD_PEG = 3.6725;
 async function fetchUsdFromAedPeg(): Promise<number | null> {
-  const [aedHtml, usdHtml] = await Promise.all([
-    get("https://alanchand.com/en/currencies-price/aed"),
-    get("https://alanchand.com/en/exchange-rates/aed-usd"),
-  ]);
-
-  let usdRate = Number(
-    attr(usdHtml, /id=["'](?:inputCalcValue|outputCalcValue)["'][^>]*data-rate=["']([\d.]+)["']/i) ?? "0",
-  );
-  if (!usdRate) usdRate = Number(attr(usdHtml, /data-rate=["']([\d.]+)["']/i) ?? "0") || 0.2723;
+  const aedHtml = await get("https://alanchand.com/en/currencies-price/aed");
 
   const raw =
     attr(aedHtml, /<input[^>]*data-curr=["']tmn["'][^>]*data-price=["']([\d,.]+)["']/i) ??
@@ -93,7 +91,7 @@ async function fetchUsdFromAedPeg(): Promise<number | null> {
   if (!raw) return null;
 
   const aedToman = Number(raw.replace(/,/g, "").trim()) / 10;
-  return Math.round(aedToman / usdRate);
+  return Math.round(aedToman * AED_USD_PEG);
 }
 
 // درهم امارات (تومان). همان صفحه‌ای که fetchUsdFromAedPeg برای نرخِ برج پگ می‌خواند،
@@ -298,7 +296,8 @@ async function fetchSilver925FromTgju(): Promise<{ v: number | null; err?: strin
       if (!last) { lastErr = "no data[0][0]"; await sleep(3000); continue; }
       const n = Number(String(last).replace(/[^0-9.-]/g, ""));
       if (!Number.isFinite(n)) { lastErr = "bad number"; await sleep(3000); continue; }
-      return { v: Math.round(n) };
+      // tgju قیمت را به ریال می‌دهد؛ بقیهٔ سیستم تومان است ⇒ ‎/۱۰.
+      return { v: Math.round(n / 10) };
     } catch (e) {
       lastErr = (e as Error).name + ":" + (e as Error).message;
       await sleep(3000);
@@ -386,16 +385,22 @@ Deno.serve(async (req) => {
   await Promise.all(jobs);
   const silverRes = await silverPromise;
 
-  // نقرهٔ ۹۲۵ = نوارِ داخلیِ ~۵ میلیون (منبع: tgju). «فرمولِ جهانیِ انس» WRONG است
-  // (نقطهٔ ~۴۷۰ هزار = اسپاتِ بین‌المللی، نه بازارِ داخلیِ ایران). پس fallback = آخرین مقدارِ خوبِ tgju، وگرنه null.
+  // نقرهٔ ۹۲۵ = نوارِ داخلیِ ~۴۴۰ هزار تومان (منبع: tgju، به ریال ⇒ ‎/۱۰).
+  // «فرمولِ جهانیِ انس» WRONG است (نقطهٔ ~۴۷۰ هزار = اسپاتِ بین‌المللی، نه
+  // بازارِ داخلیِ ایران). پس fallback = آخرین مقدارِ خوبِ tgju، وگرنه null.
+  // توجه: مقدارهای silver_gramِ ذخیره‌شدهٔ پیش از ۲۰۲۶-۱۱-۰۹ به ریال‌اند؛
+  // از این چرخه به بعد تومان ذخیره می‌شود، پس نمودارِ نقره یک پلهٔ ۱۰ برابری
+  // (به پایین) در تاریخِ اصلاح نشان می‌دهد — خطا نیست، تصحیحِ واحد است.
   if (silverRes.v !== null) {
     market.silver_gram = silverRes.v;
   } else {
     const prev = await rest("market?id=eq.1&select=silver_gram") as any[];
     const prevSilver = prev?.[0]?.silver_gram;
-    if (prevSilver != null && Number(prevSilver) > 1000000) {
-      market.silver_gram = Number(prevSilver);
-      errors.push(`silver_925: tgju unavailable (${silverRes.err}), kept last good ${prevSilver}`);
+    // آستانه به تومان است. مقدارهای پیش از اصلاحِ واحد (۲۰۲۶-۱۱-۰۹) به ریال‌اند،
+    // پس اگر مقدارِ قبلی هنوز ریالی بود (‎>۱٬۰۰۰٬۰۰۰) اول ‎/۱۰ می‌شود.
+    if (prevSilver != null && Number(prevSilver) > 100000) {
+      market.silver_gram = Number(prevSilver) > 1000000 ? Math.round(Number(prevSilver) / 10) : Number(prevSilver);
+      errors.push(`silver_925: tgju unavailable (${silverRes.err}), kept last good ${market.silver_gram}`);
     } else {
       errors.push(`silver_925: tgju unavailable (${silverRes.err}), no last-good`);
     }
@@ -446,7 +451,7 @@ Deno.serve(async (req) => {
   // ---- periodic Telegram digest: sectioned, Persian-format, quiet unless it moves
   const thresholdPct = Number(Deno.env.get("ALERT_PCT") ?? "0.5");
   const quietPct = Number(Deno.env.get("ALERT_QUIET_PCT") ?? "0.2");
-  const cycleMin = Number(Deno.env.get("ALERT_CYCLE_MIN") ?? "30");
+  const cycleMin = Number(Deno.env.get("ALERT_CYCLE_MIN") ?? "15");
   const volatilityWindowMin = Number(Deno.env.get("VOL_WINDOW_MIN") ?? "60");
   // Per-symbol threshold multiplier: a symbol that rarely moves (coin, gold gram)
   // should not fire on its ordinary noise, while an active one (usd) should.
@@ -554,7 +559,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  // record per-symbol last price + the cycle timestamp so the next run compares 30-min deltas
+  // record per-symbol last price + the cycle timestamp so the next run compares 15-min deltas
   await rest("alert_state", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=minimal" },

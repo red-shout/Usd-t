@@ -4,7 +4,7 @@
 
 ## چرخهٔ کار
 1. **منطق در Edge Function است** (`supabase/functions/`): `ingest` (اسکراپ + ذخیره + تلگرام + push داده) و `web` (داشبورد + API).
-2. **هر ۳۰ دقیقه** `pg_cron → pg_net` → `ingest` را صدا می‌زند (cron jobid=1 روی Supabase).
+2. **هر ۱۵ دقیقه** `pg_cron → pg_net` → `ingest` را صدا می‌زند (cron jobid=1 روی Supabase).
 3. `ingest` در هر چرخه:
    - قیمت‌ها را از `alanchand.com` + `oilprice.com` می‌کِشد و در Postgres (`market`/`rate_history`/`alert_state`) ذخیره می‌کند.
    - یک **اعلان تلگرامِ دوره‌ای** می‌فرستد (`@USDTIRTLIVE`) + فلگِ نوسانِ ۲ ساعته.
@@ -27,8 +27,8 @@ supabase/schema.sql                 # جداول
 supabase/deploy.py                  # deploy + rewire cron
 supabase/project.ref                # ref پروژهٔ Supabase
 web/index.html                      # داشبوردِ GitHub Pages (داده از data.json)
-web/data.json                       # دادهٔ زنده (هر ۳۰ دقیقه به‌روز — فقط توسط ingest)
+web/data.json                       # دادهٔ زنده (هر ۱۵ دقیقه به‌روز — فقط توسط ingest)
 ```
 
-> نکته: `web/data.json` را **دستی ویرایش نکن**؛ هر ۳۰ دقیقه توسط `ingest` بازنویسی می‌شود.
+> نکته: `web/data.json` را **دستی ویرایش نکن**؛ هر ۱۵ دقیقه توسط `ingest` بازنویسی می‌شود.
 > فایل‌های قدیمی (`fetch_rates.py`, `market.json`, `.github/`) مرجعِ اولیه بودند و دیگر در چرخهٔ زنده استفاده نمی‌شوند.
