@@ -346,6 +346,89 @@ async function fetchSilver925FromAlanchand(): Promise<{ v: number | null; v999?:
   return { v: null, err: lastErr };
 }
 
+// تتر (تومان) — API عمومی و رایگان والکس (بدون کلید): نتیجهٔ
+// result.symbols.USDTTMN.stats؛ قیمت = میانهٔ bid/ask (اسپرد معمولاً ۱ تومان
+// است؛ lastPrice هم همان‌قدر است). اگر والکس در دسترس نبود، خطا می‌رود.
+async function fetchUsdtFromWallex(): Promise<{ v: number | null; err?: string }> {
+  const attempts = 2;
+  let lastErr = "unknown";
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 20000);
+      const r = await fetch("https://api.wallex.ir/v1/markets", {
+        headers: { "user-agent": UA, "accept": "application/json" },
+        signal: ctl.signal,
+      });
+      clearTimeout(t);
+      if (!r.ok) { lastErr = `HTTP ${r.status}`; await sleep(3000); continue; }
+      const j = await r.json();
+      const st = j?.result?.symbols?.USDTTMN?.stats;
+      const bid = Number(st?.bidPrice), ask = Number(st?.askPrice), last = Number(st?.lastPrice);
+      let v: number | null = null;
+      if (Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 && ask > 0) v = Math.round((bid + ask) / 2);
+      else if (Number.isFinite(last) && last > 0) v = Math.round(last);
+      if (v === null || v < 100000 || v > 1000000) { lastErr = "implausible USDT stats"; await sleep(3000); continue; }
+      return { v };
+    } catch (e) {
+      lastErr = (e as Error).name + ":" + (e as Error).message;
+      await sleep(3000);
+    }
+  }
+  return { v: null, err: lastErr };
+}
+
+// دلارِ بان‌بست (کراس‌چک مستقل و رایگان برای دلارِ ما — بدون tgju).
+// جریان: GET صفحهٔ اصلی ⇒ پارامِ تازه از JS درون‌صفحه‌ای
+// ($.post('/json', {param: "HASH,CODE,TIMESTAMP"})) ⇒ POST به /json با همان
+// UA در هر دو درخواست + Referer + X-Requested-With + کوکیِ صفحه. اگر UA دو
+// درخواست فرق کند یا هدرها نباشند، سرور {"reset":"1"} می‌دهد.
+async function fetchUsdFromBonbast(): Promise<{ v: number | null; err?: string }> {
+  const attempts = 2;
+  let lastErr = "unknown";
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 20000);
+      const page = await fetch("https://www.bonbast.com/", {
+        headers: { "user-agent": UA, "accept": "text/html", "accept-language": "en-US,en;q=0.9" },
+        signal: ctl.signal,
+      });
+      clearTimeout(t);
+      if (!page.ok) { lastErr = `GET HTTP ${page.status}`; await sleep(3000); continue; }
+      const cookie = page.headers.get("set-cookie") ?? "";
+      const html = await page.text();
+      const m = html.match(/\$\.post\('\/json', \{param: "([^"]+)"/);
+      if (!m) { lastErr = "param not found in page"; await sleep(3000); continue; }
+      const ctl2 = new AbortController();
+      const t2 = setTimeout(() => ctl2.abort(), 20000);
+      const r = await fetch("https://www.bonbast.com/json", {
+        method: "POST",
+        headers: {
+          "user-agent": UA,
+          "accept": "application/json, text/javascript, */*; q=0.01",
+          "content-type": "application/x-www-form-urlencoded",
+          "referer": "https://www.bonbast.com/",
+          "x-requested-with": "XMLHttpRequest",
+          ...(cookie ? { "cookie": cookie.split(";")[0] } : {}),
+        },
+        body: `param=${encodeURIComponent(m[1])}`,
+        signal: ctl2.signal,
+      });
+      clearTimeout(t2);
+      if (!r.ok) { lastErr = `POST HTTP ${r.status}`; await sleep(3000); continue; }
+      const j = await r.json();
+      const usd = Number(j?.usd1);
+      if (!Number.isFinite(usd) || usd < 100000 || usd > 1000000) { lastErr = `implausible usd1: ${j?.usd1}`; await sleep(3000); continue; }
+      return { v: usd };
+    } catch (e) {
+      lastErr = (e as Error).name + ":" + (e as Error).message;
+      await sleep(3000);
+    }
+  }
+  return { v: null, err: lastErr };
+}
+
 // ---------------------------------------------------------------- db
 async function rest(path: string, opts: RequestInit = {}): Promise<any> {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -371,8 +454,8 @@ const faDec = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 
 // price text, no digit substitution
 const intTxt = (n: number) => Math.round(n).toLocaleString("en-US");
 const decTxt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const EMO: Record<string, string> = { usd: "💵", eur: "🇪🇺", aed: "🇦🇪", gold_18k: "✨", gold_mesghal: "⚖️", coin_emami: "🪙", coin_gram: "🪙", gold_ounce: "🌐", silver_ounce: "🥈", silver_gram: "🥈", oil: "⛽" };
-const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", aed: "درهم", gold_18k: "طلای 18ع", gold_mesghal: "مثقال طلا", coin_emami: "سکه امامی", coin_gram: "سکه گرمی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ 925 (هر گرم)", oil: "نفت برنت" };
+const EMO: Record<string, string> = { usd: "💵", eur: "🇪🇺", aed: "🇦🇪", usdt: "₮", gold_18k: "✨", gold_mesghal: "⚖️", coin_emami: "🪙", coin_gram: "🪙", gold_ounce: "🌐", silver_ounce: "🥈", silver_gram: "🥈", oil: "⛽" };
+const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", aed: "درهم", usdt: "تتر", gold_18k: "طلای 18ع", gold_mesghal: "مثقال طلا", coin_emami: "سکه امامی", coin_gram: "سکه گرمی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ 925 (هر گرم)", oil: "نفت برنت" };
 
 async function sendTelegram(text: string) {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
@@ -428,7 +511,7 @@ Deno.serve(async (req) => {
   const wantsTest = new URL(req.url).searchParams.get("test") === "1";
   const wantsAlertTest = new URL(req.url).searchParams.get("alert_test") === "1";
   const wantsDebugOil = new URL(req.url).searchParams.get("debug_oil") === "1";
-  const market: Record<string, any> = { usd: null, eur: null, aed: null, gold_18k: null, gold_mesghal: null, gold_ounce: null, silver_ounce: null, silver_gram: null, coin_emami: null, coin_bahar: null, coin_half: null, coin_quarter: null, coin_gram: null, oil: null };
+  const market: Record<string, any> = { usd: null, eur: null, aed: null, usdt: null, gold_18k: null, gold_mesghal: null, gold_ounce: null, silver_ounce: null, silver_gram: null, coin_emami: null, coin_bahar: null, coin_half: null, coin_quarter: null, coin_gram: null, oil: null };
   const errors: string[] = [];
 
   const jobs: Promise<void>[] = [];
@@ -437,6 +520,11 @@ Deno.serve(async (req) => {
   jobs.push(fetchAed().then((v) => (market.aed = v)).catch((e) => errors.push(`aed: ${e.message}`)));
   jobs.push(fetchGoldAndCoins().then((d) => Object.assign(market, d)).catch((e) => errors.push(`gold: ${e.message}`)));
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
+  jobs.push(fetchUsdtFromWallex().then((r) => {
+    if (r.v !== null) market.usdt = r.v;
+    else errors.push(`usdt: wallex unavailable (${r.err})`);
+  }).catch((e) => errors.push(`usdt: ${e.message}`)));
+  const bonbastPromise = fetchUsdFromBonbast();
   const silverPromise = fetchSilver925FromAlanchand();
   await Promise.all(jobs);
   const silverRes = await silverPromise;
@@ -445,7 +533,7 @@ Deno.serve(async (req) => {
   // نشد (اولین اجرا یا قطعی DB) گاردریل رد می‌شود، نه کل چرخه.
   let prev: Record<string, any> | null = null;
   try {
-    const prevRows = await rest("market?id=eq.1&select=usd,eur,aed,gold_18k,gold_mesghal,gold_ounce,silver_ounce,silver_gram,coin_emami,coin_bahar,coin_half,coin_quarter,coin_gram,oil") as any[];
+    const prevRows = await rest("market?id=eq.1&select=usd,eur,aed,usdt,gold_18k,gold_mesghal,gold_ounce,silver_ounce,silver_gram,coin_emami,coin_bahar,coin_half,coin_quarter,coin_gram,oil") as any[];
     prev = prevRows?.[0] ?? null;
   } catch (_) { /* no previous row -> guards skip */ }
 
@@ -468,6 +556,12 @@ Deno.serve(async (req) => {
     }
   }
 
+  // تتر: اگر والکس این چرخه در دسترس نبود، آخرین مقدارِ خوب می‌ماند (خطا
+  // بالاتر ثبت شده است).
+  if (market.usdt === null && prev?.usdt != null && Number(prev.usdt) > 100000) {
+    market.usdt = Number(prev.usdt);
+  }
+
   // ---- گاردریل قیمت (بستهٔ اطمینان، ۲۰۲۶-۱۱-۰۹)
   // هر مقدارِ تازه باید (۱) نسبت به چرخهٔ قبل جهشِ ناممکن نداشته باشد و
   // (۲) با قیمت‌های هم‌خانواده سازگار باشد. در غیر این صورت مقدارِ قبلیِ خوب
@@ -475,7 +569,7 @@ Deno.serve(async (req) => {
   // حدها عامدانه گشاده‌اند: کارشان گرفتنِ خطاهای بزرگ (مثل دلارِ ۷۲٬۳۳۰
   // به‌جای ۲۶۵٬۰۰۰) است، نه نوسانِ واقعیِ بازار.
   const MOVE_LIMIT: Record<string, number> = {
-    usd: 0.08, eur: 0.08, aed: 0.08,
+    usd: 0.08, eur: 0.08, aed: 0.08, usdt: 0.08,
     gold_18k: 0.06, gold_mesghal: 0.06, gold_ounce: 0.03, silver_ounce: 0.05,
     silver_gram: 0.08, coin_emami: 0.06, coin_bahar: 0.06, coin_half: 0.06,
     coin_quarter: 0.06, coin_gram: 0.06, oil: 0.08,
@@ -541,6 +635,34 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ---- کراس‌چک دلار (۲۰۲۶-۱۱-۰۹): دلارِ ما (درهم × پگ) در برابر بان‌بست
+  // (منبعِ مستقلِ بازارِ آزاد، بدون tgju). باند ±۲٪: اختلافِ عادیِ دو منبع
+  // زیر ۱٪ است؛ بیرون از باند یعنی یکی دارد اشتباه می‌کند ⇒ خطا (⇒ هشدار).
+  let usdXcheck: { ours: number; bonbast: number; ratio: number } | null = null;
+  if (market.usd != null) {
+    const bb = await bonbastPromise;
+    if (bb.v !== null) {
+      const ratio = Number(market.usd) / bb.v;
+      usdXcheck = { ours: Number(market.usd), bonbast: bb.v, ratio: Math.round(ratio * 10000) / 10000 };
+      if (ratio < 0.98 || ratio > 1.02) {
+        errors.push(`usd_xcheck: ours ${market.usd} vs bonbast ${bb.v} (ratio ${usdXcheck.ratio}, want 0.98-1.02)`);
+      }
+    } else {
+      errors.push(`usd_xcheck: bonbast unavailable (${bb.err}), cross-check blind this cycle`);
+    }
+  }
+
+  // ---- کراس‌چک تتر (۲۰۲۶-۱۱-۰۹): تترِ والکس باید نزدیک دلارِ نقد باشد
+  // (معمولاً ۰ تا ۱٪ پایین‌تر)؛ باند ۰٫۹۵–۱٫۰۳.
+  let usdtXcheck: { usdt: number; usd: number; ratio: number } | null = null;
+  if (market.usdt != null && market.usd != null) {
+    const ratio = Number(market.usdt) / Number(market.usd);
+    usdtXcheck = { usdt: Number(market.usdt), usd: Number(market.usd), ratio: Math.round(ratio * 10000) / 10000 };
+    if (ratio < 0.95 || ratio > 1.03) {
+      errors.push(`usdt_xcheck: usdt ${market.usdt} vs usd ${market.usd} (ratio ${usdtXcheck.ratio}, want 0.95-1.03)`);
+    }
+  }
+
   const now = new Date();
   const tehran = new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Asia/Tehran", year: "numeric", month: "2-digit", day: "2-digit",
@@ -564,7 +686,7 @@ Deno.serve(async (req) => {
 
   // snapshot + history  (only the real numeric columns go to the table;
   // updated_iso/date/time live inside `payload` only)
-  const FIELDS = ["usd", "eur", "aed", "gold_18k", "gold_mesghal", "gold_ounce", "silver_ounce", "silver_gram", "coin_emami", "coin_bahar", "coin_half", "coin_quarter", "coin_gram", "oil"] as const;
+  const FIELDS = ["usd", "eur", "aed", "usdt", "gold_18k", "gold_mesghal", "gold_ounce", "silver_ounce", "silver_gram", "coin_emami", "coin_bahar", "coin_half", "coin_quarter", "coin_gram", "oil"] as const;
   const row: Record<string, any> = { id: 1, updated_at: now.toISOString(), payload: market };
   for (const f of FIELDS) row[f] = market[f];
   await rest("market?on_conflict=id", {
@@ -573,7 +695,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify(row),
   });
 
-  const watched = ["usd", "eur", "aed", "gold_18k", "gold_mesghal", "coin_emami", "coin_gram", "gold_ounce", "silver_gram", "oil"];
+  const watched = ["usd", "eur", "aed", "usdt", "gold_18k", "gold_mesghal", "coin_emami", "coin_gram", "gold_ounce", "silver_gram", "oil"];
   const rows = watched.filter((s) => market[s] !== null).map((s) => ({
     symbol: s, price: Number(market[s]), ts: now.toISOString(),
   }));
@@ -660,7 +782,7 @@ Deno.serve(async (req) => {
   for (const s of watched) { const lp = lastPrice(s); const c = Number(market[s]); if (lp && c) moveMax = Math.max(moveMax, Math.abs((c - lp) / lp) * 100); }
 
   const SECTIONS = [
-    { t: "#ارزها", s: ["usd", "eur", "aed"] },
+    { t: "#ارزها", s: ["usd", "eur", "aed", "usdt"] },
     { t: "#طلاوسکه", s: ["gold_18k", "gold_mesghal", "gold_ounce", "coin_emami", "coin_gram"] },
     { t: "#نقره", s: ["silver_gram"] },
     { t: "#انرژی", s: ["oil"] },
@@ -795,7 +917,7 @@ function downsample<T>(arr: T[], n: number): T[] {
   }
 
   return new Response(JSON.stringify({
-    ok: true, ms: Date.now() - started, market, errors, rejected, alert, silver_xcheck: silverXcheck, test_message: testMessage,
+    ok: true, ms: Date.now() - started, market, errors, rejected, alert, silver_xcheck: silverXcheck, usd_xcheck: usdXcheck, usdt_xcheck: usdtXcheck, test_message: testMessage,
     history_rows: rows.length, digest_sent: sentDigest, telegram: tg, github: gh, oil_source: OIL_SRC,
     ...(wantsDebugOil ? { oil_debug: OIL_DEBUG } : {}),
   }, null, 2), { headers: { "Content-Type": "application/json" } });

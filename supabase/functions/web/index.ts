@@ -45,7 +45,7 @@ async function serveApi(req: Request): Promise<Response> {
   return new Response(JSON.stringify({
     symbol, updated_at: m.updated_at, date_shamsi: shamsi,
     market: {
-      usd: m.usd, eur: m.eur, gold_18k: m.gold_18k, gold_mesghal: m.gold_mesghal,
+      usd: m.usd, eur: m.eur, usdt: m.usdt, gold_18k: m.gold_18k, gold_mesghal: m.gold_mesghal,
       gold_ounce: m.gold_ounce, silver_ounce: m.silver_ounce, silver_gram: m.silver_gram, coin_emami: m.coin_emami, coin_bahar: m.coin_bahar,
       coin_half: m.coin_half, coin_quarter: m.coin_quarter, coin_gram: m.coin_gram, oil: m.oil,
     },
@@ -111,13 +111,13 @@ const HTML = `<!doctype html>
 <script>
 const FA=s=>String(s).replace(/\\d/g,d=>"۰۱۲۳۴۵۶۷۸۹"[d]);
 const NF=n=>FA(Math.round(n).toLocaleString("en-US"));
-const CARDS=[["usd","🇺🇸","دلار آمریکا","toman"],["eur","🇪🇺","یورو اروپا","toman"],
+const CARDS=[["usd","🇺🇸","دلار آمریکا","toman"],["eur","🇪🇺","یورو اروپا","toman"],["usdt","₮","تتر","toman"],
 ["gold_18k","✨","طلای ۱۸ عیار","toman"],["gold_mesghal","⚖️","مثقال طلا","toman"],
 ["gold_ounce","🌐","انس جهانی طلا","usd"],["silver_ounce","🥈","انس جهانی نقره","usd"],["silver_gram","🥈","نقرهٔ ۹۲۵ (هر گرم)","toman"],["coin_emami","🟡","سکه امامی","toman"],
 ["coin_bahar","🟡","سکه بهار آزادی","toman"],["coin_half","🟡","نیم‌سکه","toman"],
 ["coin_quarter","🟡","ربع‌سکه","toman"],["coin_gram","🟡","سکه گرمی","toman"],
 ["oil","⛽","نفت برنت","usd"]];
-const CHARTABLE=["usd","eur","gold_18k","coin_emami","gold_ounce","silver_ounce","silver_gram","oil"];
+const CHARTABLE=["usd","eur","usdt","gold_18k","coin_emami","gold_ounce","silver_ounce","silver_gram","oil"];
 let cur="usd",last=null;
 function pct(d){const p=(d.history||[]).map(h=>Number(h.price));return p.length>1?((p.at(-1)-p[0])/p[0])*100:0}
 function drawGrid(){
