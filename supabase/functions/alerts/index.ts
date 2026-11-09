@@ -234,6 +234,76 @@ async function fetchOpenMeteoAlerts(): Promise<{ key: string; text: string }[]> 
   }
 }
 
+//   - MahsaAlert: public, unauthenticated REST feed
+//     (api.mahsaalert.app/api/v1/features/feed — their own client polls it
+//     every 30s; rate limit 800/min). Scope (Hamed, 2026-11-09): all of
+//     Iran, layers 32 (حملات), 13 (حملات - ج۱۲روزه), 14 (هشدار تخلیه -
+//     ج۱۲روزه) only, ANY verification tag — the tag is always shown in
+//     the message, never hidden. Detail per fresh item gives the Persian
+//     description (info is a JSON string), city/province, coordinates.
+
+// ---------------------------------------------------------------- mahsaalert
+const MAHSA_LAYERS: Record<number, string> = { 32: "حملات", 13: "حملات - ج۱۲روزه", 14: "هشدار تخلیه - ج۱۲روزه" };
+
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function tagFa(tag: string | null | undefined): string {
+  if (tag === "verified") return "تأییدشده";
+  if (tag === "not-verified") return "تأییدنشده";
+  return tag ? esc(tag) : "نامشخص";
+}
+
+async function fetchMahsaAlerts(): Promise<{ key: string; text: string }[]> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const r = await fetch("https://api.mahsaalert.app/api/v1/features/feed?limit=50", {
+      headers: { "user-agent": "pulsar-market/1.0" }, signal: ctl.signal,
+    });
+    if (!r.ok) throw new Error(`mahsa feed HTTP ${r.status}`);
+    const j = await r.json();
+    const items = (j?.data ?? []).filter((it: any) => MAHSA_LAYERS[it?.layerId]);
+    if (items.length === 0) return [];
+    // Skip what we already published before fetching details.
+    const recent = await rest(`alerts_published?select=event_key&limit=1000`);
+    const done = new Set<string>((recent ?? []).map((x: any) => x.event_key));
+    const fresh = items.filter((it: any) => !done.has(`mahsa:${it.id}`));
+    const out: { key: string; text: string }[] = [];
+    for (const it of fresh) {
+      try {
+        const c2 = new AbortController();
+        const t2 = setTimeout(() => c2.abort(), 10000);
+        let det: any;
+        try {
+          const r2 = await fetch(`https://api.mahsaalert.app/api/v1/features/${it.id}`, {
+            headers: { "user-agent": "pulsar-market/1.0" }, signal: c2.signal,
+          });
+          if (!r2.ok) throw new Error(`mahsa detail HTTP ${r2.status}`);
+          det = await r2.json();
+        } finally {
+          clearTimeout(t2);
+        }
+        if (det?.status && det.status !== "active") continue;
+        let info: any = {};
+        try { info = JSON.parse(det?.info ?? "{}"); } catch (_) { info = {}; }
+        const desc = String(info.description ?? "").trim().slice(0, 800);
+        const city = String(info.city ?? it.city ?? "").trim();
+        const prov = String(info.province ?? it.province ?? "").trim();
+        const title = MAHSA_LAYERS[det?.layerId ?? it.layerId] ?? "هشدار";
+        const where = [city, prov].filter(Boolean).join("، ");
+        out.push({
+          key: `mahsa:${it.id}`,
+          text: `<b>🚨 ${esc(title)}</b>${where ? `\n${esc(where)}` : ""}${desc ? `\n${esc(desc)}` : ""}\nوضعیت تأیید: ${tagFa(det?.verificationTag)}\nمنبع: MahsaAlert`,
+        });
+      } catch (_) { /* one bad detail must not kill the rest */ }
+    }
+    return out;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // ---------------------------------------------------------------- main
 Deno.serve(async (req) => {
   const dry = new URL(req.url).searchParams.get("dry") === "1";
@@ -248,7 +318,7 @@ Deno.serve(async (req) => {
   type Cand = { key: string; kind: string; text: string };
   const cands: Cand[] = [];
 
-  const [quakeRes, wxRes] = await Promise.allSettled([fetchQuakes(), fetchWeatherWarnings()]);
+  const [quakeRes, wxRes, mahsaRes] = await Promise.allSettled([fetchQuakes(), fetchWeatherWarnings(), fetchMahsaAlerts()]);
   if (quakeRes.status === "fulfilled") {
     sources.quake = "ok";
     for (const f of quakeRes.value) {
@@ -281,6 +351,14 @@ Deno.serve(async (req) => {
     }
   }
 
+  if (mahsaRes.status === "fulfilled") {
+    sources.mahsa = "ok";
+    for (const w of mahsaRes.value) cands.push({ key: w.key, kind: "mahsa", text: w.text });
+  } else {
+    sources.mahsa = "error";
+    errors.push(`mahsa: ${mahsaRes.reason?.message ?? mahsaRes.reason}`);
+  }
+
   // 2) dedup against what we've already published
   const recent = await rest(`alerts_published?select=event_key&limit=1000`);
   const done = new Set<string>((recent ?? []).map((x: any) => x.event_key));
@@ -305,6 +383,7 @@ Deno.serve(async (req) => {
   if (!dry) {
     if (sources.quake === "error") await noteSourceDown("quake", errors.find((e) => e.startsWith("quake:")) ?? "USGS unreachable");
     if (sources.weather === "error") await noteSourceDown("weather", errors.find((e) => e.startsWith("weather:")) ?? "irimo unreachable");
+    if (sources.mahsa === "error") await noteSourceDown("mahsa", errors.find((e) => e.startsWith("mahsa:")) ?? "mahsa feed unreachable");
   }
 
   return new Response(
