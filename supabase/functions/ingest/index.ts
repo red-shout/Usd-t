@@ -386,6 +386,7 @@ async function ghCommit(path: string, content: string, msg: string): Promise<boo
 Deno.serve(async (req) => {
   const started = Date.now();
   const wantsTest = new URL(req.url).searchParams.get("test") === "1";
+  const wantsAlertTest = new URL(req.url).searchParams.get("alert_test") === "1";
   const wantsDebugOil = new URL(req.url).searchParams.get("debug_oil") === "1";
   const market: Record<string, any> = { usd: null, eur: null, aed: null, gold_18k: null, gold_mesghal: null, gold_ounce: null, silver_ounce: null, silver_gram: null, coin_emami: null, coin_bahar: null, coin_half: null, coin_quarter: null, coin_gram: null, oil: null };
   const errors: string[] = [];
@@ -704,6 +705,12 @@ function downsample<T>(arr: T[], n: number): T[] {
     } else {
       alert = { skipped: "same problem alerted <2h ago" };
     }
+  }
+
+  // تستِ دستیِ هشدار: ?alert_test=1 یک پیامِ تست به چتِ هشدار می‌فرستد
+  // (برای اثباتِ اینکه آیدیِ TELEGRAM_ALERT_CHAT_ID درست است).
+  if (wantsAlertTest) {
+    alert = await sendAlert(`✅ <b>پالس بازار — تست هشدار</b>\nاین پیامِ تستِ هشدارِ خرابی است؛ اگر آن را می‌بینی، هشدارها به چتِ درست می‌رسند.`);
   }
 
   return new Response(JSON.stringify({
