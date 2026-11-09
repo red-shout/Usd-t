@@ -276,40 +276,15 @@ async function fetchOil(): Promise<string | null> {
   return null;
 }
 
-// نقرهٔ ۹۲۵ (هر گرم، تومان) — منبعِ اصلی: tgju (بازارِ محلی). با retry برای عبور از rate-limit.
+// نقرهٔ ۹۲۵ (هر گرم، تومان) — منبعِ اصلی: بورس کالا، از صفحهٔ silver-price
+// الان چند. tgju از ۲۰۲۶-۱۱-۰۹ کاملاً حذف شد (تصمیم حامد: سایت دولتی، قیمت
+// را دستکاری/فریز/حذف می‌کند). با retry برای عبور از rate-limit.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-async function fetchSilver925FromTgju(): Promise<{ v: number | null; err?: string }> {
-  const attempts = 3;
-  let lastErr = "unknown";
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), 20000);
-      const r = await fetch("https://api.tgju.org/v1/market/indicator/summary-table-data/silver_925", {
-        headers: { "user-agent": UA, "accept": "application/json" },
-        signal: ctl.signal,
-      });
-      clearTimeout(t);
-      if (!r.ok) { lastErr = `HTTP ${r.status}`; await sleep(3000); continue; }
-      const j = await r.json();
-      const last = j?.data?.[0]?.[0];
-      if (!last) { lastErr = "no data[0][0]"; await sleep(3000); continue; }
-      const n = Number(String(last).replace(/[^0-9.-]/g, ""));
-      if (!Number.isFinite(n)) { lastErr = "bad number"; await sleep(3000); continue; }
-      // tgju قیمت را به ریال می‌دهد؛ بقیهٔ سیستم تومان است ⇒ ‎/۱۰.
-      return { v: Math.round(n / 10) };
-    } catch (e) {
-      lastErr = (e as Error).name + ":" + (e as Error).message;
-      await sleep(3000);
-    }
-  }
-  return { v: null, err: lastErr };
-}
 
-// کراس‌چک نقره: قیمت ۹۲۵ از بورس کالا (منبعِ صفحهٔ silver-price الان چند).
-// صفحه قیمتِ شمش ۹۹۹.۹ را می‌دهد؛ ۹۲۵ = همان نرخ × ۰٫۹۲۵. این مقدار فقط برای
-// مقایسه با tgju است — قیمتِ منتشرشده همان tgju می‌ماند، چون قیمتِ بازارِ
-// ۹۲۵ ~۶٪ بالاتر از ارزشِ فلزِ خالص است.
+// قیمت ۹۲۵ از بورس کالا: صفحه قیمتِ شمش ۹۹۹.۹ را می‌دهد؛ ۹۲۵ = همان نرخ × ۰٫۹۲۵.
+// توجه: این قیمت ~۶٪ پایین‌تر از قیمتِ بازارِ ۹۲۵ است (بدون پریمیومِ
+// خرده‌فروشی) — نمودارِ نقره در تاریخِ تغییرِ منبع یک پلهٔ ~۶٪ به پایین نشان
+// می‌دهد؛ تغییرِ منبع است، نه سقوطِ قیمت.
 function faDigitsToNum(s: string): number | null {
   const en = s.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
     .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
@@ -436,8 +411,7 @@ Deno.serve(async (req) => {
   jobs.push(fetchAed().then((v) => (market.aed = v)).catch((e) => errors.push(`aed: ${e.message}`)));
   jobs.push(fetchGoldAndCoins().then((d) => Object.assign(market, d)).catch((e) => errors.push(`gold: ${e.message}`)));
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
-  const silverPromise = fetchSilver925FromTgju();
-  const silverXPromise = fetchSilver925FromAlanchand();
+  const silverPromise = fetchSilver925FromAlanchand();
   await Promise.all(jobs);
   const silverRes = await silverPromise;
 
@@ -449,23 +423,20 @@ Deno.serve(async (req) => {
     prev = prevRows?.[0] ?? null;
   } catch (_) { /* no previous row -> guards skip */ }
 
-  // نقرهٔ ۹۲۵ = نوارِ داخلیِ ~۴۴۰ هزار تومان (منبع: tgju، به ریال ⇒ ‎/۱۰).
-  // «فرمولِ جهانیِ انس» WRONG است (نقطهٔ ~۴۷۰ هزار = اسپاتِ بین‌المللی، نه
-  // بازارِ داخلیِ ایران). پس fallback = آخرین مقدارِ خوبِ tgju، وگرنه null.
-  // توجه: مقدارهای silver_gramِ ذخیره‌شدهٔ پیش از ۲۰۲۶-۱۱-۰۹ به ریال‌اند؛
-  // از این چرخه به بعد تومان ذخیره می‌شود، پس نمودارِ نقره یک پلهٔ ۱۰ برابری
-  // (به پایین) در تاریخِ اصلاح نشان می‌دهد — خطا نیست، تصحیحِ واحد است.
+  // نقرهٔ ۹۲۵ = مشتق از شمش ۹۹۹.۹ بورس کالا (صفحهٔ silver-price الان چند).
+  // از ۲۰۲۶-۱۱-۰۹ tgju کاملاً حذف شد (تصمیم حامد). fallback = آخرین مقدارِ
+  // خوب، وگرنه null. توجه: مقدارهای silver_gramِ پیش از این تاریخ از tgju
+  // بودند و ~۶٪ بالاترند؛ نمودارِ نقره در تاریخِ تغییرِ منبع یک پلهٔ ~۶٪ به
+  // پایین نشان می‌دهد — تغییرِ منبع است، نه سقوطِ قیمت.
   if (silverRes.v !== null) {
     market.silver_gram = silverRes.v;
   } else {
     const prevSilver = prev?.silver_gram;
-    // آستانه به تومان است. مقدارهای پیش از اصلاحِ واحد (۲۰۲۶-۱۱-۰۹) به ریال‌اند،
-    // پس اگر مقدارِ قبلی هنوز ریالی بود (‎>۱٬۰۰۰٬۰۰۰) اول ‎/۱۰ می‌شود.
     if (prevSilver != null && Number(prevSilver) > 100000) {
-      market.silver_gram = Number(prevSilver) > 1000000 ? Math.round(Number(prevSilver) / 10) : Number(prevSilver);
-      errors.push(`silver_925: tgju unavailable (${silverRes.err}), kept last good ${market.silver_gram}`);
+      market.silver_gram = Number(prevSilver);
+      errors.push(`silver_925: alanchand silver page unavailable (${silverRes.err}), kept last good ${market.silver_gram}`);
     } else {
-      errors.push(`silver_925: tgju unavailable (${silverRes.err}), no last-good`);
+      errors.push(`silver_925: alanchand silver page unavailable (${silverRes.err}), no last-good`);
     }
   }
 
@@ -522,20 +493,19 @@ Deno.serve(async (req) => {
   }
   if (rejected.length) errors.push(`guardrail rejected: ${rejected.join(" | ")}`);
 
-  // ---- کراس‌چک نقره (۲۰۲۶-۱۱-۰۹): tgju در برابر بورس کالا (الان چند).
-  // نسبتِ عادی ~۱٫۰۶ است (قیمتِ بازارِ ۹۲۵ ~۶٪ بالاتر از ارزشِ فلزِ خالص)؛
-  // اگر از باند خارج شد، یکی از دو منبع دارد اشتباه می‌کند ⇒ خطا (⇒ هشدار).
-  let silverXcheck: { tgju: number; ime_derived: number; ratio: number } | null = null;
-  if (market.silver_gram != null) {
-    const x = await silverXPromise;
-    if (x.v !== null) {
-      const ratio = Number(market.silver_gram) / x.v;
-      silverXcheck = { tgju: Number(market.silver_gram), ime_derived: x.v, ratio: Math.round(ratio * 1000) / 1000 };
-      if (ratio < 0.98 || ratio > 1.15) {
-        errors.push(`silver_xcheck: tgju ${market.silver_gram} vs ime-derived ${x.v} (ratio ${silverXcheck.ratio}, want 0.98-1.15)`);
-      }
-    } else {
-      errors.push(`silver_xcheck: alanchand silver page unavailable (${x.err}), cross-check blind this cycle`);
+  // ---- کراس‌چک نقره (۲۰۲۶-۱۱-۰۹): مقدارِ بورس کالا در برابر انسِ جهانی.
+  // ۹۲۵ مشتق‌شده از شمشِ بورس کالا باید نزدیک انسِ نقره × دلار باشد
+  // (۹۲۵ = انس × دلار ÷ ۳۱٫۱۰۳۵ × ۰٫۹۲۵). باند عامدانه گشاده است چون بورس
+  // کالا فقط در ساعتِ معاملات به‌روز می‌شود و انس شبانه‌روز حرکت می‌کند؛
+  // اگر از باند خارج شد، یا صفحهٔ الان چند یا انسِ جهانی اشتباه می‌کند ⇒
+  // خطا (⇒ هشدار).
+  let silverXcheck: { ime_derived: number; spot_derived: number; ratio: number } | null = null;
+  if (market.silver_gram != null && market.silver_ounce != null && market.usd != null) {
+    const spot = Number(market.silver_ounce) * Number(market.usd) / 31.1035 * 0.925;
+    const ratio = Number(market.silver_gram) / spot;
+    silverXcheck = { ime_derived: Number(market.silver_gram), spot_derived: Math.round(spot), ratio: Math.round(ratio * 1000) / 1000 };
+    if (spot > 0 && (ratio < 0.93 || ratio > 1.07)) {
+      errors.push(`silver_xcheck: ime ${market.silver_gram} vs spot-derived ${silverXcheck.spot_derived} (ratio ${silverXcheck.ratio}, want 0.93-1.07)`);
     }
   }
 
