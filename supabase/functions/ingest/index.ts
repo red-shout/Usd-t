@@ -132,54 +132,64 @@ async function fetchEur(): Promise<number | null> {
 }
 
 async function fetchGoldAndCoins(): Promise<Record<string, number | string>> {
-  const data: Record<string, number | string> = {};
-  const html = await get("https://alanchand.com/en/gold-price");
-
-  for (const c of jsonLd(html)) {
-    if (c["@type"] !== "ItemList") continue;
-    for (const el of c.itemListElement ?? []) {
-      const item = el?.item ?? {};
-      const name: string = item.name ?? "";
-      const offers = item.offers ?? {};
-      if (!offers.price) continue;
-      const isIrr = offers.priceCurrency === "IRR";
-      const v: number | string = isIrr ? Math.round(Number(offers.price) / 10) : String(offers.price);
-      if (name.includes("Mesghal")) data.gold_mesghal = v as number;
-      else if (name.includes("18K Gold")) data.gold_18k = v as number;
-      else if (name.includes("Full Coin") || name.includes("Imami")) data.coin_emami = v as number;
-      else if (name.includes("Bahar Azadi")) data.coin_bahar = v as number;
-      else if (name.includes("Half Coin")) data.coin_half = v as number;
-      else if (name.includes("Quarter Coin")) data.coin_quarter = v as number;
-      else if (name.toLowerCase().includes("gram sekke")) data.coin_gram = v as number;
-      else if (name.includes("Gold Ounce")) data.gold_ounce = v;
-      else if (name.includes("Silver Ounce")) data.silver_ounce = v;
+  // تا ۳ تلاش: صفحهٔ طلا گاهی بدون ItemList برمی‌گردد (rate-limit یا صفحهٔ
+  // موقت) و قبلاً بی‌صدا {} برمی‌گشت — همهٔ فیلدهای طلا null می‌شدند بدون
+  // هیچ خطایی. حالا اگر طلای ۱۸ عیار هیچ‌وقت parse نشد، throw می‌کند تا
+  // خطا ثبت و هشدار برود؛ اگر فقط بعضی فیلدها آمدند، بهترینِ تلاش‌ها برمی‌گردد.
+  let best: Record<string, number | string> = {};
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const data: Record<string, number | string> = {};
+    const html = await get("https://alanchand.com/en/gold-price");
+    for (const c of jsonLd(html)) {
+      if (c["@type"] !== "ItemList") continue;
+      for (const el of c.itemListElement ?? []) {
+        const item = el?.item ?? {};
+        const name: string = item.name ?? "";
+        const offers = item.offers ?? {};
+        if (!offers.price) continue;
+        const isIrr = offers.priceCurrency === "IRR";
+        const v: number | string = isIrr ? Math.round(Number(offers.price) / 10) : String(offers.price);
+        if (name.includes("Mesghal")) data.gold_mesghal = v as number;
+        else if (name.includes("18K Gold")) data.gold_18k = v as number;
+        else if (name.includes("Full Coin") || name.includes("Imami")) data.coin_emami = v as number;
+        else if (name.includes("Bahar Azadi")) data.coin_bahar = v as number;
+        else if (name.includes("Half Coin")) data.coin_half = v as number;
+        else if (name.includes("Quarter Coin")) data.coin_quarter = v as number;
+        else if (name.toLowerCase().includes("gram sekke")) data.coin_gram = v as number;
+        else if (name.includes("Gold Ounce")) data.gold_ounce = v;
+        else if (name.includes("Silver Ounce")) data.silver_ounce = v;
+      }
     }
-  }
 
-  // table fallback
-  if (!data.gold_18k || !data.coin_emami) {
-    const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-    let tm: RegExpExecArray | null;
-    while ((tm = trRe.exec(html))) {
-      const cells = [...tm[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((c) =>
-        c[1].replace(/<[^>]+>/g, "").trim().toLowerCase()
-      );
-      if (cells.length < 2) continue;
-      const m = cells[1].replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
-      if (!m) continue;
-      const n = Number(m[1]) / 10;
-      const set = (k: string) => { if (!(k in data)) data[k] = Math.round(n); };
-      if (cells[0].includes("18k gold")) set("gold_18k");
-      else if (cells[0].includes("mesghal")) set("gold_mesghal");
-      else if (cells[0].includes("full coin")) set("coin_emami");
-      else if (cells[0].includes("bahar")) set("coin_bahar");
-      else if (cells[0].includes("half coin")) set("coin_half");
-      else if (cells[0].includes("quarter coin")) set("coin_quarter");
-      else if (cells[0].includes("gram sekke")) set("coin_gram");
-      else if (cells[0].includes("silver ounce")) set("silver_ounce");
+    // table fallback
+    if (!data.gold_18k || !data.coin_emami) {
+      const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+      let tm: RegExpExecArray | null;
+      while ((tm = trRe.exec(html))) {
+        const cells = [...tm[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((c) =>
+          c[1].replace(/<[^>]+>/g, "").trim().toLowerCase()
+        );
+        if (cells.length < 2) continue;
+        const m = cells[1].replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+        if (!m) continue;
+        const n = Number(m[1]) / 10;
+        const set = (k: string) => { if (!(k in data)) data[k] = Math.round(n); };
+        if (cells[0].includes("18k gold")) set("gold_18k");
+        else if (cells[0].includes("mesghal")) set("gold_mesghal");
+        else if (cells[0].includes("full coin")) set("coin_emami");
+        else if (cells[0].includes("bahar")) set("coin_bahar");
+        else if (cells[0].includes("half coin")) set("coin_half");
+        else if (cells[0].includes("quarter coin")) set("coin_quarter");
+        else if (cells[0].includes("gram sekke")) set("coin_gram");
+        else if (cells[0].includes("silver ounce")) set("silver_ounce");
+      }
     }
+    if (Object.keys(data).length > Object.keys(best).length) best = data;
+    if (data.gold_18k && data.coin_emami) return data;
+    await sleep(3000);
   }
-  return data;
+  if (best.gold_18k) return best;
+  throw new Error("gold page parsed no prices (empty ItemList/table after 3 attempts)");
 }
 
 // Single TradingView symbol quote via the public scanner endpoint (15s timeout).
@@ -509,8 +519,12 @@ Deno.serve(async (req) => {
   // اگر از باند خارج شد، یا صفحهٔ الان چند یا انسِ جهانی اشتباه می‌کند ⇒
   // خطا (⇒ هشدار). کراس‌چک روی مقدارِ پایه (پیش از پریمیوم) است.
   let silverXcheck: { ime_derived: number; spot_derived: number; ratio: number; published: number } | null = null;
-  if (silverBase != null && market.silver_ounce != null && market.usd != null) {
-    const spot = Number(market.silver_ounce) * Number(market.usd) / 31.1035 * 0.925;
+  // انس و دلار اگر این چرخه null بودند، از چرخهٔ قبل می‌آیند (انس در ۱۵ دقیقه
+  // کم حرکت می‌کند) تا کراس‌چک با یک گپِ موقتِ طلا از کار نیفتد.
+  const ozForX = market.silver_ounce ?? prev?.silver_ounce;
+  const usdForX = market.usd ?? prev?.usd;
+  if (silverBase != null && ozForX != null && usdForX != null) {
+    const spot = Number(ozForX) * Number(usdForX) / 31.1035 * 0.925;
     const ratio = silverBase / spot;
     silverXcheck = { ime_derived: silverBase, spot_derived: Math.round(spot), ratio: Math.round(ratio * 1000) / 1000, published: Number(market.silver_gram) };
     if (spot > 0 && (ratio < 0.93 || ratio > 1.07)) {
