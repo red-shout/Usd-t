@@ -7,6 +7,13 @@
 //   - Earthquake: USGS FDSN feed (global, structured, reachable). IRNO is the
 //     official Iranian feed but is SNI-blocked here; USGS is the reliable proxy.
 //   - Weather: IRIMETS (irimo.ir) "هشدار هواشناسی" red/orange warnings.
+//     Fallback while irimo is unreachable: Open-Meteo forecast (free, no
+//     key) for Tehran + Karaj, with fixed thresholds — gusts >= 80 km/h
+//     (next 6h), rain >= 20 mm / 6h or >= 30 mm / 24h, hail thunderstorm
+//     (WMO 96/99, next 6h), snow >= 10 cm / 12h. The fallback runs ONLY
+//     when the irimo fetch fails; when irimo is back it stops by itself
+//     (irimo stays the primary source). Forecast-derived alerts are
+//     labelled as such in the message — they are NOT official warnings.
 //
 // Scope (Hamed, 2026-11-09): Tehran + Alborz only, for now.
 //   - Quakes: epicentre inside the Tehran+Alborz box (lat 35.2–36.4, lon 50.3–52.6).
@@ -159,6 +166,74 @@ async function fetchWeatherWarnings(): Promise<{ id: string; level: string; text
   return out;
 }
 
+// ---------------------------------------------------------------- weather fallback (Open-Meteo)
+// Free forecast API, no key. Runs ONLY when the irimo fetch fails.
+// Thresholds (Hamed-approved defaults, 2026-11-09):
+//   gusts >= 80 km/h (next 6h) | rain >= 20 mm / 6h or >= 30 mm / 24h
+//   hail thunderstorm WMO 96/99 (next 6h) | snow >= 10 cm (next 12h)
+const OM_LOCS = [
+  { name: "تهران", lat: 35.6892, lon: 51.389 },
+  { name: "کرج (البرز)", lat: 35.84, lon: 50.9391 },
+];
+const OM_GUST_KMH = 80;
+const OM_RAIN_6H_MM = 20;
+const OM_RAIN_24H_MM = 30;
+const OM_SNOW_12H_CM = 10;
+
+async function fetchOpenMeteoAlerts(): Promise<{ key: string; text: string }[]> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const url = "https://api.open-meteo.com/v1/forecast?latitude=35.6892,35.84&longitude=51.389,50.9391&hourly=precipitation,wind_gusts_10m,snowfall,weather_code&forecast_days=2&timezone=Asia%2FTehran";
+    const r = await fetch(url, { headers: { "user-agent": "pulsar-market/1.0" }, signal: ctl.signal });
+    if (!r.ok) throw new Error(`open-meteo HTTP ${r.status}`);
+    const data = await r.json();
+    const locs = Array.isArray(data) ? data : [data];
+    // Current hour in Tehran as "YYYY-MM-DDTHH" (Tehran = UTC+3:30).
+    const cur = new Date(Date.now() + 3.5 * 3600 * 1000).toISOString().slice(0, 13);
+    const out: { key: string; text: string }[] = [];
+    const tag = "منبع: Open-Meteo (جایگزین موقت — هشدار رسمی نیست)";
+    for (let li = 0; li < locs.length; li++) {
+      const loc = OM_LOCS[li] ?? { name: `نقطه ${li + 1}` };
+      const h = locs[li]?.hourly;
+      if (!h?.time) continue;
+      const times: string[] = h.time;
+      let start = times.findIndex((s: string) => s.slice(0, 13) >= cur);
+      if (start < 0) start = 0;
+      const sum = (arr: number[], n: number) => arr.slice(start, start + n).reduce((a, b) => a + (Number(b) || 0), 0);
+      const onset = (idx: number) => times[start + idx]?.slice(11, 16) ?? "";
+      const first6 = times[start]?.slice(0, 13) ?? "";
+      // wind gusts (next 6h)
+      const gusts = (h.wind_gusts_10m ?? []).slice(start, start + 6);
+      const gi = gusts.findIndex((v: number) => Number(v) >= OM_GUST_KMH);
+      if (gi >= 0) {
+        out.push({ key: `${loc.name}:wind:${times[start + gi]?.slice(0, 13)}`, text: `<b>⚠️ هشدار هواشناسی — پیش‌بینی</b>\n${loc.name}: تندباد شدید، تا ${Math.round(Number(gusts[gi]))} کیلومتر بر ساعت، از ساعت ${onset(gi)}\n${tag}` });
+      }
+      // rain (next 6h or 24h)
+      const rain6 = sum(h.precipitation ?? [], 6);
+      const rain24 = sum(h.precipitation ?? [], 24);
+      if (rain6 >= OM_RAIN_6H_MM || rain24 >= OM_RAIN_24H_MM) {
+        const amt = rain6 >= OM_RAIN_6H_MM ? `${Math.round(rain6)} میلی‌متر در ۶ ساعت` : `${Math.round(rain24)} میلی‌متر در ۲۴ ساعت`;
+        out.push({ key: `${loc.name}:rain:${first6}`, text: `<b>⚠️ هشدار هواشناسی — پیش‌بینی</b>\n${loc.name}: بارش سنگین، ${amt}\n${tag}` });
+      }
+      // hail thunderstorm (next 6h)
+      const codes = (h.weather_code ?? []).slice(start, start + 6);
+      const hi = codes.findIndex((c: number) => c === 96 || c === 99);
+      if (hi >= 0) {
+        out.push({ key: `${loc.name}:hail:${times[start + hi]?.slice(0, 13)}`, text: `<b>⚠️ هشدار هواشناسی — پیش‌بینی</b>\n${loc.name}: رگبار تگرگ، از ساعت ${onset(hi)}\n${tag}` });
+      }
+      // snow (next 12h)
+      const snow12 = sum(h.snowfall ?? [], 12);
+      if (snow12 >= OM_SNOW_12H_CM) {
+        out.push({ key: `${loc.name}:snow:${first6}`, text: `<b>⚠️ هشدار هواشناسی — پیش‌بینی</b>\n${loc.name}: برف سنگین، ${Math.round(snow12)} سانتی‌متر در ۱۲ ساعت\n${tag}` });
+      }
+    }
+    return out;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 // ---------------------------------------------------------------- main
 Deno.serve(async (req) => {
   const dry = new URL(req.url).searchParams.get("dry") === "1";
@@ -195,8 +270,15 @@ Deno.serve(async (req) => {
     sources.weather = "ok";
     for (const w of wxRes.value) cands.push({ key: `wx:${w.id}`, kind: "weather", text: w.text });
   } else {
-    sources.weather = "error";
-    errors.push(`weather: ${wxRes.reason?.message ?? wxRes.reason}`);
+    // irimo down -> Open-Meteo forecast fallback (temporary, labelled).
+    try {
+      const om = await fetchOpenMeteoAlerts();
+      sources.weather = "fallback";
+      for (const w of om) cands.push({ key: `wxom:${w.key}`, kind: "weather-forecast", text: w.text });
+    } catch (e: any) {
+      sources.weather = "error";
+      errors.push(`weather: irimo: ${wxRes.reason?.message ?? wxRes.reason}; open-meteo: ${e?.message ?? e}`);
+    }
   }
 
   // 2) dedup against what we've already published
