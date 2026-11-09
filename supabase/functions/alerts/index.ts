@@ -118,6 +118,44 @@ function tehranTime(ms: number): string {
   }).format(new Date(ms));
 }
 
+function faNum(s: string | number): string {
+  return String(s).replace(/[0-9]/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
+}
+
+// USGS place strings are English ("10 km E of Damavand, Iran"). Render them
+// in Persian when the city is known (Tehran+Alborz box); otherwise keep the
+// original English so nothing is lost.
+const QUAKE_CITIES: Record<string, string> = {
+  Tehran: "تهران", Karaj: "کرج", Damavand: "دماوند", Demavend: "دماوند",
+  Firouzkouh: "فیروزکوه", Firuzkuh: "فیروزکوه", Lavasan: "لواسان",
+  Shemshak: "شمشک", Pardis: "پردیس", Shahriar: "شهریار",
+  Eslamshahr: "اسلامشهر", "Robat Karim": "رباط‌کریم", Varamin: "ورامین",
+  Pakdasht: "پاکدشت", Savojbolagh: "ساوجبلاغ", Hashtgerd: "هشتگرد",
+  Taleghan: "طالقان", Fasham: "فشم", Rudehen: "رودهن", Bumehen: "بومهن",
+  Absard: "آبسرد", Kilan: "کیلان", Arjomand: "ارجمند", Abali: "آب‌علی",
+  Jajrud: "جاجرود", Shemiran: "شمیران", Ray: "ری", Qods: "قدس",
+  Malard: "ملارد", Andisheh: "اندیشه", Parand: "پرند", Nazarabad: "نظرآباد",
+  Eshtehard: "اشتهارد", Chaharbagh: "چهارباغ", Mohammadshahr: "محمدشهر",
+  "Meshkin Dasht": "مشکین‌دشت", "Kamal Shahr": "کمال‌شهر",
+  Garmdarreh: "گرمدره", Garmsar: "گرمسار", Aradan: "آرادان",
+  Sorkheh: "سرخه", Eyvanekey: "ایوانکی",
+};
+const QUAKE_DIRS: Record<string, string> = {
+  N: "شمال", S: "جنوب", E: "شرق", W: "غرب",
+  NE: "شمال‌شرق", NW: "شمال‌غرب", SE: "جنوب‌شرق", SW: "جنوب‌غرب",
+};
+function placeFa(place: string): string {
+  const m = place.match(/^(\d+)\s*km\s+([NSEW]{1,2})\s+of\s+(.+?)(?:,\s*Iran)?$/i);
+  if (m) {
+    const city = QUAKE_CITIES[m[3].trim()] ?? m[3].trim();
+    const dir = QUAKE_DIRS[m[2].toUpperCase()] ?? m[2];
+    return `${faNum(m[1])} کیلومتری ${dir} ${city}`;
+  }
+  const bare = place.replace(/,\s*Iran$/i, "").trim();
+  if (QUAKE_CITIES[bare]) return QUAKE_CITIES[bare];
+  return place;
+}
+
 // ---------------------------------------------------------------- weather
 async function fetchWeatherWarnings(): Promise<{ id: string; level: string; text: string }[]> {
   // IRIMETS homepage lists the most recent "هشدار هواشناسی" news items with a
@@ -243,7 +281,14 @@ async function fetchOpenMeteoAlerts(): Promise<{ key: string; text: string }[]> 
 //     description (info is a JSON string), city/province, coordinates.
 
 // ---------------------------------------------------------------- mahsaalert
-const MAHSA_LAYERS: Record<number, string> = { 32: "حملات", 13: "حملات - ج۱۲روزه", 14: "هشدار تخلیه - ج۱۲روزه", 42: "گزارش میدانی" };
+// Emoji per severity: 🚨 attacks / evacuation, 📍 field reports (the bulk)
+// — so 🚨 keeps its urgency and the channel stays scannable at a glance.
+const MAHSA_LAYERS: Record<number, { title: string; emoji: string }> = {
+  32: { title: "حملات", emoji: "🚨" },
+  13: { title: "حملات - ج۱۲روزه", emoji: "🚨" },
+  14: { title: "هشدار تخلیه - ج۱۲روزه", emoji: "🚨" },
+  42: { title: "گزارش میدانی", emoji: "📍" },
+};
 
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -290,11 +335,11 @@ async function fetchMahsaAlerts(): Promise<{ key: string; text: string }[]> {
         const desc = String(info.description ?? "").trim().slice(0, 800);
         const city = String(info.city ?? it.city ?? "").trim();
         const prov = String(info.province ?? it.province ?? "").trim();
-        const title = MAHSA_LAYERS[det?.layerId ?? it.layerId] ?? "هشدار";
+        const layer = MAHSA_LAYERS[det?.layerId ?? it.layerId] ?? { title: "هشدار", emoji: "⚠️" };
         const where = [city, prov].filter(Boolean).join("، ");
         out.push({
           key: `mahsa:${it.id}`,
-          text: `<b>🚨 ${esc(title)}</b>${where ? `\n${esc(where)}` : ""}${desc ? `\n${esc(desc)}` : ""}\nوضعیت تأیید: ${tagFa(det?.verificationTag)}\nمنبع: MahsaAlert`,
+          text: `<b>${layer.emoji} ${esc(layer.title)}</b>${where ? `\n${esc(where)}` : ""}${desc ? `\n${esc(desc)}` : ""}\nوضعیت تأیید: ${tagFa(det?.verificationTag)} | منبع: MahsaAlert`,
         });
       } catch (_) { /* one bad detail must not kill the rest */ }
     }
@@ -326,10 +371,11 @@ Deno.serve(async (req) => {
       if (!inScope(f.geometry?.coordinates ?? []) || mag < minMag) continue;
       const place = String(f.properties?.place ?? "ایران");
       const when = f.properties?.time ? tehranTime(Number(f.properties.time)) : "";
+      const depth = Math.round(Number(f.geometry?.coordinates?.[2]) || 0);
       cands.push({
         key: `quake:${f.id}`,
         kind: "earthquake",
-        text: `<b>🚨 زلزله</b>\nقدرت: M${mag}\nمحل: ${place}${when ? `\nساعت: ${when}` : ""}\nعمق: ${Math.round(Number(f.geometry?.coordinates?.[2]) || 0)} کیلومتر`,
+        text: `<b>🚨 زلزله M${mag}</b>\n📍 ${esc(placeFa(place))}\nعمق ${faNum(depth)} کیلومتر${when ? ` | ساعت ${faNum(when)}` : ""}\nمنبع: USGS`,
       });
     }
   } else {
