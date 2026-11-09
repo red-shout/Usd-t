@@ -466,19 +466,11 @@ Deno.serve(async (req) => {
       rejectSymbol("usd", `vs aed-peg: usd=${market.usd} aed*3.6725=${Math.round(implied)}`);
     }
   }
-  // (۳) مثقال = طلای ۱۸ عیار × ۴٫۶۰۸ — اگر ناسازگار بودند، آن که بیشتر پریده رد می‌شود
+  // (۴) طلای ۱۸ عیار باید نزدیک انس × دلار باشد (با تلورانسِ پریمیومِ داخلی)
   const moveOf = (s: string): number => {
     const pv = prevNum(s);
     return pv !== null && market[s] != null ? Math.abs(Number(market[s]) - pv) / pv : 0;
   };
-  if (market.gold_18k != null && market.gold_mesghal != null) {
-    const ratio = Number(market.gold_mesghal) / (Number(market.gold_18k) * 4.608);
-    if (ratio < 0.98 || ratio > 1.02) {
-      rejectSymbol(moveOf("gold_18k") >= moveOf("gold_mesghal") ? "gold_18k" : "gold_mesghal",
-        `mesghal/18k ratio ${ratio.toFixed(3)} (want ~1.00)`);
-    }
-  }
-  // (۴) طلای ۱۸ عیار باید نزدیک انس × دلار باشد (با تلورانسِ پریمیومِ داخلی)
   if (market.gold_18k != null && market.gold_ounce != null && market.usd != null) {
     const implied18k = Number(market.gold_ounce) * Number(market.usd) / 31.1035 * 0.75;
     const ratio = Number(market.gold_18k) / implied18k;
