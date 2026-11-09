@@ -705,7 +705,12 @@ Deno.serve(async (req) => {
       const parts = [`📅 ${market.date_shamsi}\n🕐 ساعت ${FA(market.time)}`];
       parts.push(sectionBlock);
       if (alertBlock) parts.push(alertBlock);
-      parts.push(`<code>به‌روزرسانی بعدی: ${FA(cycleMin)} دقیقه دیگه</code>`);
+      // ساعتِ دقیقِ بعدی (نه «۱۵ دقیقه دیگه»): زمانِ نسبی وقتی پیام ساعت‌ها
+      // بعد خوانده شود غلط است؛ ساعتِ مطلق همیشه درست می‌ماند.
+      const nextTehran = new Intl.DateTimeFormat("sv-SE", {
+        timeZone: "Asia/Tehran", hour: "2-digit", minute: "2-digit",
+      }).format(new Date(now.getTime() + cycleMin * 60000));
+      parts.push(`<code>به‌روزرسانی بعدی ساعت ${FA(nextTehran)}</code>`);
       tg = await sendTelegram(parts.join("\n\n"));
       sentDigest = tg?.ok === true;
     }
