@@ -346,6 +346,21 @@ async function sendTelegram(text: string) {
   return { status: r.status, ok: r.ok };
 }
 
+// هشدارِ خرابی به چتِ خصوصیِ حامد (نه کانالِ عمومی). سکرت:
+// TELEGRAM_ALERT_CHAT_ID = آیدیِ عددیِ تلگرامِ حامد (از @userinfobot).
+// اگر تنظیم نشده باشد، هشدار فقط در `errors` و پاسخِ JSON می‌ماند.
+async function sendAlert(text: string) {
+  const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
+  const chat = Deno.env.get("TELEGRAM_ALERT_CHAT_ID");
+  if (!token || !chat) return { skipped: "no TELEGRAM_ALERT_CHAT_ID set" };
+  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chat, text, parse_mode: "HTML" }),
+  });
+  return { status: r.status, ok: r.ok };
+}
+
 // ---- GitHub Pages data push (keeps github.io copy live)
 async function ghCommit(path: string, content: string, msg: string): Promise<boolean> {
   const token = Deno.env.get("GITHUB_TOKEN");
@@ -385,6 +400,14 @@ Deno.serve(async (req) => {
   await Promise.all(jobs);
   const silverRes = await silverPromise;
 
+  // مقدارهای چرخهٔ قبل — هم برای fallback نقره، هم برای گاردریل. اگر خوانده
+  // نشد (اولین اجرا یا قطعی DB) گاردریل رد می‌شود، نه کل چرخه.
+  let prev: Record<string, any> | null = null;
+  try {
+    const prevRows = await rest("market?id=eq.1&select=usd,eur,aed,gold_18k,gold_mesghal,gold_ounce,silver_ounce,silver_gram,coin_emami,coin_bahar,coin_half,coin_quarter,coin_gram,oil") as any[];
+    prev = prevRows?.[0] ?? null;
+  } catch (_) { /* no previous row -> guards skip */ }
+
   // نقرهٔ ۹۲۵ = نوارِ داخلیِ ~۴۴۰ هزار تومان (منبع: tgju، به ریال ⇒ ‎/۱۰).
   // «فرمولِ جهانیِ انس» WRONG است (نقطهٔ ~۴۷۰ هزار = اسپاتِ بین‌المللی، نه
   // بازارِ داخلیِ ایران). پس fallback = آخرین مقدارِ خوبِ tgju، وگرنه null.
@@ -394,8 +417,7 @@ Deno.serve(async (req) => {
   if (silverRes.v !== null) {
     market.silver_gram = silverRes.v;
   } else {
-    const prev = await rest("market?id=eq.1&select=silver_gram") as any[];
-    const prevSilver = prev?.[0]?.silver_gram;
+    const prevSilver = prev?.silver_gram;
     // آستانه به تومان است. مقدارهای پیش از اصلاحِ واحد (۲۰۲۶-۱۱-۰۹) به ریال‌اند،
     // پس اگر مقدارِ قبلی هنوز ریالی بود (‎>۱٬۰۰۰٬۰۰۰) اول ‎/۱۰ می‌شود.
     if (prevSilver != null && Number(prevSilver) > 100000) {
@@ -405,6 +427,67 @@ Deno.serve(async (req) => {
       errors.push(`silver_925: tgju unavailable (${silverRes.err}), no last-good`);
     }
   }
+
+  // ---- گاردریل قیمت (بستهٔ اطمینان، ۲۰۲۶-۱۱-۰۹)
+  // هر مقدارِ تازه باید (۱) نسبت به چرخهٔ قبل جهشِ ناممکن نداشته باشد و
+  // (۲) با قیمت‌های هم‌خانواده سازگار باشد. در غیر این صورت مقدارِ قبلیِ خوب
+  // نگه داشته می‌شود و دلیلش در `rejected` می‌رود (برای هشدار + پاسخ JSON).
+  // حدها عامدانه گشاده‌اند: کارشان گرفتنِ خطاهای بزرگ (مثل دلارِ ۷۲٬۳۳۰
+  // به‌جای ۲۶۵٬۰۰۰) است، نه نوسانِ واقعیِ بازار.
+  const MOVE_LIMIT: Record<string, number> = {
+    usd: 0.08, eur: 0.08, aed: 0.08,
+    gold_18k: 0.06, gold_mesghal: 0.06, gold_ounce: 0.03, silver_ounce: 0.05,
+    silver_gram: 0.08, coin_emami: 0.06, coin_bahar: 0.06, coin_half: 0.06,
+    coin_quarter: 0.06, coin_gram: 0.06, oil: 0.08,
+  };
+  const rejected: string[] = [];
+  const prevNum = (s: string): number | null => {
+    const v = prev ? Number((prev as any)[s]) : NaN;
+    return Number.isFinite(v) && v > 0 ? v : null;
+  };
+  function rejectSymbol(s: string, reason: string) {
+    rejected.push(`${s}: ${reason}`);
+    market[s] = prevNum(s);
+  }
+  for (const s of Object.keys(MOVE_LIMIT)) {
+    const v = market[s];
+    if (v === null || v === undefined) continue;
+    const cur = Number(v);
+    const pv = prevNum(s);
+    if (!Number.isFinite(cur)) { rejectSymbol(s, `not-a-number (${String(v)})`); continue; }
+    if (pv !== null && Math.abs(cur - pv) / pv > MOVE_LIMIT[s]) {
+      rejectSymbol(s, `${pv.toLocaleString("en-US")} -> ${cur.toLocaleString("en-US")} (${((cur - pv) / pv * 100).toFixed(1)}%, limit ${(MOVE_LIMIT[s] * 100).toFixed(0)}%)`);
+    }
+  }
+  // (۲) دلار باید نزدیک درهم × پگ باشد (رگرسیونِ همان باگِ ۷۲٬۳۳۰)
+  if (market.usd != null && market.aed != null) {
+    const implied = Number(market.aed) * AED_USD_PEG;
+    if (implied > 0 && Math.abs(Number(market.usd) - implied) / implied > 0.02) {
+      rejectSymbol("usd", `vs aed-peg: usd=${market.usd} aed*3.6725=${Math.round(implied)}`);
+    }
+  }
+  // (۳) مثقال = طلای ۱۸ عیار × ۴٫۶۰۸ — اگر ناسازگار بودند، آن که بیشتر پریده رد می‌شود
+  const moveOf = (s: string): number => {
+    const pv = prevNum(s);
+    return pv !== null && market[s] != null ? Math.abs(Number(market[s]) - pv) / pv : 0;
+  };
+  if (market.gold_18k != null && market.gold_mesghal != null) {
+    const ratio = Number(market.gold_mesghal) / (Number(market.gold_18k) * 4.608);
+    if (ratio < 0.98 || ratio > 1.02) {
+      rejectSymbol(moveOf("gold_18k") >= moveOf("gold_mesghal") ? "gold_18k" : "gold_mesghal",
+        `mesghal/18k ratio ${ratio.toFixed(3)} (want ~1.00)`);
+    }
+  }
+  // (۴) طلای ۱۸ عیار باید نزدیک انس × دلار باشد (با تلورانسِ پریمیومِ داخلی)
+  if (market.gold_18k != null && market.gold_ounce != null && market.usd != null) {
+    const implied18k = Number(market.gold_ounce) * Number(market.usd) / 31.1035 * 0.75;
+    const ratio = Number(market.gold_18k) / implied18k;
+    if (implied18k > 0 && (ratio < 0.90 || ratio > 1.08)) {
+      rejectSymbol(moveOf("gold_18k") >= moveOf("gold_ounce") ? "gold_18k" : "gold_ounce",
+        `18k/ounce ratio ${ratio.toFixed(3)} (want 0.90-1.08)`);
+    }
+  }
+  if (rejected.length) errors.push(`guardrail rejected: ${rejected.join(" | ")}`);
 
   const now = new Date();
   const tehran = new Intl.DateTimeFormat("sv-SE", {
@@ -462,7 +545,7 @@ Deno.serve(async (req) => {
   // silence" feeling like the system is dead. 0 disables the floor.
   const floorHours = Number(Deno.env.get("ALERT_FLOOR_H") ?? "8");
 
-  const allStates = [...watched, "cycle"];
+  const allStates = [...watched, "cycle", "health"];
   const state = await rest(`alert_state?symbol=in.(${allStates.join(",")})&select=symbol,last_price,last_alert_ts`);
   const stateMap: Record<string, any> = Object.fromEntries((state ?? []).map((s) => [s.symbol, s]));
   const lastPrice = (s: string) => (stateMap[s]?.last_price ? Number(stateMap[s].last_price) : null);
@@ -597,8 +680,42 @@ function downsample<T>(arr: T[], n: number): T[] {
     gh = { path: ghPath, updated: did };
   } catch (e) { gh = { error: (e as Error).message }; }
 
+  // ---- هشدار خرابی (بستهٔ اطمینان): فقط به چتِ هشدارِ حامد، نه کانالِ عمومی.
+  // یک مشکلِ تکراری حداکثر هر ۲ ساعت یک بار هشدار می‌دهد (امضایش در
+  // alert_state با نماد `health` ذخیره می‌شود). در حالتِ تست هشدار نمی‌رود.
+  let alert: any = null;
+  const ghFailed = !(gh && (gh as any).updated === true);
+  if (!wantsTest && (errors.length > 0 || ghFailed)) {
+    const otherErrors = errors.filter((e) => !e.startsWith("guardrail rejected"));
+    const sig = [
+      ...rejected.map((r) => "guard:" + r.split(":")[0]),
+      ...otherErrors.map((e) => "err:" + e.split(":")[0]),
+      ...(ghFailed ? ["gh-push"] : []),
+    ].sort().join(",");
+    let sigHash = 0;
+    for (let i = 0; i < sig.length; i++) sigHash = (sigHash * 31 + sig.charCodeAt(i)) >>> 0;
+    const lastHealth = stateMap.health;
+    const sameProblem = lastHealth?.last_price != null && Number(lastHealth.last_price) === sigHash;
+    const throttled = sameProblem && lastHealth?.last_alert_ts &&
+      (now.getTime() - new Date(lastHealth.last_alert_ts).getTime()) < 2 * 3600 * 1000;
+    if (!throttled) {
+      const lines = [`⚠️ <b>پالس بازار — هشدار سیستم</b>`, `📅 ${market.date_shamsi} · 🕐 ${FA(market.time)}`];
+      if (rejected.length) lines.push(`🚫 رد شده توسط گاردریل:\n${rejected.map((r) => `• ${r}`).join("\n")}`);
+      if (otherErrors.length) lines.push(`❌ خطاها:\n${otherErrors.map((e) => `• ${e}`).join("\n")}`);
+      if (ghFailed) lines.push(`❌ push آینهٔ گیت‌هاب ناموفق بود (data.json تازه نشد)`);
+      alert = await sendAlert(lines.join("\n\n"));
+      await rest("alert_state", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify([{ symbol: "health", last_price: sigHash, last_alert_ts: now.toISOString() }]),
+      }).catch(() => null);
+    } else {
+      alert = { skipped: "same problem alerted <2h ago" };
+    }
+  }
+
   return new Response(JSON.stringify({
-    ok: true, ms: Date.now() - started, market, errors,
+    ok: true, ms: Date.now() - started, market, errors, rejected, alert,
     history_rows: rows.length, digest_sent: sentDigest, telegram: tg, github: gh, oil_source: OIL_SRC,
     ...(wantsDebugOil ? { oil_debug: OIL_DEBUG } : {}),
   }, null, 2), { headers: { "Content-Type": "application/json" } });

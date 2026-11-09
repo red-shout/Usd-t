@@ -71,12 +71,12 @@ def deploy(slug, src_dir):
 
 
 def rewire_cron():
-    """Point the 30-min ingest cron at the ACTIVE ingest slug (re-derive, robust to poll flakiness)."""
+    """Point the 15-min ingest cron at the ACTIVE ingest slug (re-derive, robust to poll flakiness)."""
     fn = call("/functions")
     slug = next((f["slug"] for f in (fn if isinstance(fn, list) else []) if f.get("name") == "ingest" and f.get("status") == "ACTIVE"), None)
     if not slug:
         print("cron: no active ingest found to point to"); return
-    sql = ("select cron.alter_job(1, '*/30 * * * *', $q$ "
+    sql = ("select cron.alter_job(1, '*/15 * * * *', $q$ "
            "select net.http_post(url := 'https://" + REF + ".supabase.co/functions/v1/" + slug +
            "', body := '{}'::jsonb, headers := jsonb_build_object('Content-Type','application/json')); $q$)")
     db(sql)
