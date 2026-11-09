@@ -2,8 +2,11 @@
 const URL_ = Deno.env.get("SUPABASE_URL")!;
 const KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-async function rest<T = any>(path: string): Promise<T> {
-  const r = await fetch(`${URL_}/rest/v1/${path}`, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } });
+async function rest<T = any>(path: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(`${URL_}/rest/v1/${path}`, {
+    ...init,
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, ...(init?.headers ?? {}) },
+  });
   if (!r.ok) throw new Error(`REST ${r.status} ${await r.text()}`);
   return r.json() as T;
 }
@@ -27,10 +30,17 @@ async function serveApi(req: Request): Promise<Response> {
   const u = new URL(req.url);
   const symbol = u.searchParams.get("symbol") ?? "usd";
   const hours = Number(u.searchParams.get("hours") ?? 24 * 90);
-  const since = new Date(Date.now() - hours * 3600_000).toISOString();
   const [market, history] = await Promise.all([
     rest("market?id=eq.1&select=*"),
-    rest(`rate_history?symbol=eq.${symbol}&ts=gte.${since}&select=ts,price&order=ts.asc&limit=5000`),
+    // Chart history via the sampled_history() SQL function: ~300 evenly
+    // spaced points over the window, sampled server-side. The old query
+    // pulled up to 5000 raw rows per page load (and, with order asc + limit,
+    // the oldest 5000 — the chart's last point was weeks stale).
+    rest(`rpc/sampled_history`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ p_symbol: symbol, p_days: Math.max(1, Math.ceil(hours / 24)), p_n: 300 }),
+    }),
   ]);
   const m: any = market[0] ?? {};
   let shamsi = (m.payload ?? {}).date_shamsi ?? "";
@@ -172,7 +182,7 @@ async function load(){
 }
 document.getElementById("tabs").innerHTML=CHARTABLE.map(s=>\`<button class="tab \${s===cur?"on":""}" data-s="\${s}">\${(CARDS.find(c=>c[0]===s)||[])[2]||s}</button>\`).join("");
 document.getElementById("tabs").onclick=e=>{const b=e.target.closest(".tab");if(!b)return;cur=b.dataset.s;[...document.querySelectorAll(".tab")].forEach(t=>t.classList.toggle("on",t===b));load();};
-load();setInterval(load,60000);
+load();setInterval(load,300000); // data only changes every 15 min; polling every 60s re-fetched identical data 14 times out of 15
 </script>
 </body></html>`;
 

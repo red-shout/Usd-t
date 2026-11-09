@@ -89,8 +89,12 @@ const AED_USD_PEG = 3.6725;
 // ۱٫۰۵۸؛ نرخ‌آرا ۹۹۹ِ بازار ۴۷۲٬۰۷۰ در برابر ۹۹۹ِ بورس کالا ۴۴۷٬۷۲۳ ⇒
 // ۱٫۰۵۴؛ پریمیومِ مشابه در طلای ۱۸ عیارِ خرده‌فروشی ~۶٪ است. پس ۱٫۰۶.
 const SILVER_BAZAAR_PREMIUM = 1.06;
-async function fetchUsdFromAedPeg(): Promise<number | null> {
-  const aedHtml = await get("https://alanchand.com/en/currencies-price/aed");
+
+// The AED page is fetched ONCE per cycle and shared: fetchUsdFromAedPeg
+// (dollar via peg) and fetchAed (the dirham price itself) both read the
+// same HTML. Fetching it twice was one wasted request per cycle.
+async function fetchUsdFromAedPeg(aedHtmlP: Promise<string>): Promise<number | null> {
+  const aedHtml = await aedHtmlP;
 
   const raw =
     attr(aedHtml, /<input[^>]*data-curr=["']tmn["'][^>]*data-price=["']([\d,.]+)["']/i) ??
@@ -101,10 +105,10 @@ async function fetchUsdFromAedPeg(): Promise<number | null> {
   return Math.round(aedToman * AED_USD_PEG);
 }
 
-// درهم امارات (تومان). همان صفحه‌ای که fetchUsdFromAedPeg برای نرخِ برج پگ می‌خواند،
-// پس قیمتِ مستقیمِ درهم را از همان می‌گیریم — بدون درخواستِ اضافه.
-async function fetchAed(): Promise<number | null> {
-  const html = await get("https://alanchand.com/en/currencies-price/aed");
+// درهم امارات (تومان). همان صفحه‌ای که fetchUsdFromAedPeg برای نرخِ پگ
+// می‌خواند — HTML مشترک است، بدون درخواستِ اضافه.
+async function fetchAed(aedHtmlP: Promise<string>): Promise<number | null> {
+  const html = await aedHtmlP;
   for (const c of jsonLd(html)) {
     if (c["@type"] === "Product" && c.sku === "AED") {
       const p = Number(c?.offers?.price ?? 0);
@@ -279,10 +283,13 @@ async function fetchOil(): Promise<string | null> {
   // then Yahoo Brent. First positive value wins.
   const bb = await fetchBlackBullBrent();
   if (bb) { OIL_SRC = "BLACKBULL:BRENT (data.tradingview.com)"; return bb.toFixed(3); }
+  // The three TradingView fallbacks are independent: try them in parallel
+  // (priority order kept) instead of up to 3 sequential 15s timeouts.
   const tv = ["FX:UKOIL", "NYMEX:BZ1!", "ICEEUR:BRN1!"];
-  for (const id of tv) {
-    const v = await tvClose(id);
-    if (v) { OIL_SRC = id; return v.toFixed(2); }
+  const tvResults = await Promise.all(tv.map((id) => tvClose(id)));
+  for (let i = 0; i < tv.length; i++) {
+    const v = tvResults[i];
+    if (v) { OIL_SRC = tv[i]; return v.toFixed(2); }
   }
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 15000);
@@ -515,16 +522,21 @@ Deno.serve(async (req) => {
   const errors: string[] = [];
 
   const jobs: Promise<void>[] = [];
-  jobs.push(fetchUsdFromAedPeg().then((v) => (market.usd = v)).catch((e) => errors.push(`usd: ${e.message}`)));
+  const aedHtmlP = get("https://alanchand.com/en/currencies-price/aed");
+  jobs.push(fetchUsdFromAedPeg(aedHtmlP).then((v) => (market.usd = v)).catch((e) => errors.push(`usd: ${e.message}`)));
   jobs.push(fetchEur().then((v) => (market.eur = v)).catch((e) => errors.push(`eur: ${e.message}`)));
-  jobs.push(fetchAed().then((v) => (market.aed = v)).catch((e) => errors.push(`aed: ${e.message}`)));
+  jobs.push(fetchAed(aedHtmlP).then((v) => (market.aed = v)).catch((e) => errors.push(`aed: ${e.message}`)));
   jobs.push(fetchGoldAndCoins().then((d) => Object.assign(market, d)).catch((e) => errors.push(`gold: ${e.message}`)));
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
   jobs.push(fetchUsdtFromWallex().then((r) => {
     if (r.v !== null) market.usdt = r.v;
     else errors.push(`usdt: wallex unavailable (${r.err})`);
   }).catch((e) => errors.push(`usdt: ${e.message}`)));
-  const bonbastPromise = fetchUsdFromBonbast();
+  // بان‌بست فقط کراس‌چک است (قیمتِ دلار از درهم × پگ می‌آید)؛ چکِ ساعتی
+  // کافی است — ۳ چرخه از ۴ اصلاً درخواست نمی‌فرستند (۱۴۴ درخواست در روز
+  // کمتر). چرخهٔ سرِ هر ساعتِ UTC کراس‌چک می‌کند.
+  const bonbastHourly = new Date().getUTCMinutes() < 15;
+  const bonbastPromise = bonbastHourly ? fetchUsdFromBonbast() : null;
   const silverPromise = fetchSilver925FromAlanchand();
   await Promise.all(jobs);
   const silverRes = await silverPromise;
@@ -639,7 +651,7 @@ Deno.serve(async (req) => {
   // (منبعِ مستقلِ بازارِ آزاد، بدون tgju). باند ±۲٪: اختلافِ عادیِ دو منبع
   // زیر ۱٪ است؛ بیرون از باند یعنی یکی دارد اشتباه می‌کند ⇒ خطا (⇒ هشدار).
   let usdXcheck: { ours: number; bonbast: number; ratio: number } | null = null;
-  if (market.usd != null) {
+  if (market.usd != null && bonbastPromise) {
     const bb = await bonbastPromise;
     if (bb.v !== null) {
       const ratio = Number(market.usd) / bb.v;
@@ -852,24 +864,23 @@ Deno.serve(async (req) => {
   let gh = null;
   try {
     const ch = ["usd", "eur", "aed", "gold_18k", "coin_emami", "gold_ounce", "silver_gram", "oil"];
-  // Evenly pick at most `n` points, always keeping the newest one.
-function downsample<T>(arr: T[], n: number): T[] {
-  if (arr.length <= n) return arr;
-  const out: T[] = [];
-  const step = (arr.length - 1) / (n - 1);
-  for (let i = 0; i < n; i++) out.push(arr[Math.round(i * step)]);
-  return out;
-}
-
-  const lastN = "last90";
+    const lastN = "last90";
+    // Chart history comes from the sampled_history() SQL function: 90 evenly
+    // spaced points over the true 90-day window, sampled server-side. The old
+    // code pulled up to 2000 rows per symbol (limit=2000, order asc) and
+    // downsampled in the function — that returned the OLDEST 2000 rows, so
+    // the live chart's last point was weeks stale (Oct 16-18) while the page
+    // claimed to be current, and it moved ~800KB per cycle. Now: 8 small RPC
+    // calls, ~90 rows each.
     const hist: Record<string, any[]> = {};
-    for (const s of ch) {
-      // Sample across the whole window, not just the newest N rows: 90 evenly
-      // spaced points over 90 days, so the chart shows real history instead of
-      // a couple of days that happen to be in the table.
-      const h90 = await rest(`rate_history?symbol=eq.${s}&ts=gte.${new Date(now.getTime() - 90 * 864e5).toISOString()}&select=ts,price&order=ts.asc&limit=2000`);
-      hist[s] = downsample((h90 ?? []).map((x) => ({ ts: x.ts, price: Number(x.price) })), 90);
-    }
+    const histEntries = await Promise.all(ch.map(async (s) => {
+      const rows = await rest("rpc/sampled_history", {
+        method: "POST",
+        body: JSON.stringify({ p_symbol: s, p_days: 90, p_n: 90 }),
+      }) as any[];
+      return [s, (rows ?? []).map((x) => ({ ts: x.ts, price: Number(x.price) }))] as const;
+    }));
+    for (const [s, pts] of histEntries) hist[s] = pts;
     const payload = JSON.stringify({ updated_at: now.toISOString(), date_shamsi: market.date_shamsi, market, history: hist });
     const ghPath = Deno.env.get("GH_DATA_PATH") ?? "web/data.json";
     const did = await ghCommit(ghPath, payload, `auto: update ${lastN} dashboard data [skip ci]`);
