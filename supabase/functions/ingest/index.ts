@@ -132,14 +132,23 @@ async function fetchEur(): Promise<number | null> {
 }
 
 async function fetchGoldAndCoins(): Promise<Record<string, number | string>> {
-  // تا ۳ تلاش: صفحهٔ طلا گاهی بدون ItemList برمی‌گردد (rate-limit یا صفحهٔ
-  // موقت) و قبلاً بی‌صدا {} برمی‌گشت — همهٔ فیلدهای طلا null می‌شدند بدون
-  // هیچ خطایی. حالا اگر طلای ۱۸ عیار هیچ‌وقت parse نشد، throw می‌کند تا
-  // خطا ثبت و هشدار برود؛ اگر فقط بعضی فیلدها آمدند، بهترینِ تلاش‌ها برمی‌گردد.
+  // تا ۴ تلاش: اول صفحهٔ انگلیسی (۲ بار)، بعد صفحهٔ فارسی (۲ بار — نام‌های
+  // فارسی: «گرم طلای ۱۸ عیار»، «سکه امامی» و…). صفحهٔ طلا گاهی بدون ItemList
+  // برمی‌گردد و قبلاً بی‌صدا {} برمی‌گشت؛ حالا اگر طلای ۱۸ عیار هیچ‌وقت parse
+  // نشد، throw می‌کند تا خطا ثبت و هشدار برود. اگر فقط بعضی فیلدها آمدند،
+  // بهترینِ تلاش‌ها برمی‌گردد.
+  const URLS = [
+    "https://alanchand.com/en/gold-price",
+    "https://alanchand.com/en/gold-price",
+    "https://alanchand.com/gold-price",
+    "https://alanchand.com/gold-price",
+  ];
   let best: Record<string, number | string> = {};
-  for (let attempt = 0; attempt < 3; attempt++) {
+  let lastDiag = "";
+  for (let attempt = 0; attempt < URLS.length; attempt++) {
     const data: Record<string, number | string> = {};
-    const html = await get("https://alanchand.com/en/gold-price");
+    const html = await get(URLS[attempt]);
+    lastDiag = `len=${html.length} itemList=${html.includes("ItemList")} challenge=${html.includes("cf-challenge") || html.includes("Attention Required")}`;
     for (const c of jsonLd(html)) {
       if (c["@type"] !== "ItemList") continue;
       for (const el of c.itemListElement ?? []) {
@@ -149,15 +158,15 @@ async function fetchGoldAndCoins(): Promise<Record<string, number | string>> {
         if (!offers.price) continue;
         const isIrr = offers.priceCurrency === "IRR";
         const v: number | string = isIrr ? Math.round(Number(offers.price) / 10) : String(offers.price);
-        if (name.includes("Mesghal")) data.gold_mesghal = v as number;
-        else if (name.includes("18K Gold")) data.gold_18k = v as number;
-        else if (name.includes("Full Coin") || name.includes("Imami")) data.coin_emami = v as number;
-        else if (name.includes("Bahar Azadi")) data.coin_bahar = v as number;
-        else if (name.includes("Half Coin")) data.coin_half = v as number;
-        else if (name.includes("Quarter Coin")) data.coin_quarter = v as number;
-        else if (name.toLowerCase().includes("gram sekke")) data.coin_gram = v as number;
-        else if (name.includes("Gold Ounce")) data.gold_ounce = v;
-        else if (name.includes("Silver Ounce")) data.silver_ounce = v;
+        if (name.includes("Mesghal") || name.includes("مثقال")) data.gold_mesghal = v as number;
+        else if (name.includes("18K Gold") || name.includes("۱۸ عیار")) data.gold_18k = v as number;
+        else if (name.includes("Full Coin") || name.includes("Imami") || name.includes("امامی")) data.coin_emami = v as number;
+        else if (name.includes("Bahar Azadi") || name.includes("بهار آزادی")) data.coin_bahar = v as number;
+        else if (name.includes("Half Coin") || name.includes("نیم سکه")) data.coin_half = v as number;
+        else if (name.includes("Quarter Coin") || name.includes("ربع سکه")) data.coin_quarter = v as number;
+        else if (name.toLowerCase().includes("gram sekke") || name.includes("سکه گرمی")) data.coin_gram = v as number;
+        else if (name.includes("Gold Ounce") || name.includes("انس طلا")) data.gold_ounce = v;
+        else if (name.includes("Silver Ounce") || name.includes("انس نقره")) data.silver_ounce = v;
       }
     }
 
@@ -174,14 +183,14 @@ async function fetchGoldAndCoins(): Promise<Record<string, number | string>> {
         if (!m) continue;
         const n = Number(m[1]) / 10;
         const set = (k: string) => { if (!(k in data)) data[k] = Math.round(n); };
-        if (cells[0].includes("18k gold")) set("gold_18k");
-        else if (cells[0].includes("mesghal")) set("gold_mesghal");
-        else if (cells[0].includes("full coin")) set("coin_emami");
-        else if (cells[0].includes("bahar")) set("coin_bahar");
-        else if (cells[0].includes("half coin")) set("coin_half");
-        else if (cells[0].includes("quarter coin")) set("coin_quarter");
-        else if (cells[0].includes("gram sekke")) set("coin_gram");
-        else if (cells[0].includes("silver ounce")) set("silver_ounce");
+        if (cells[0].includes("18k gold") || cells[0].includes("۱۸ عیار")) set("gold_18k");
+        else if (cells[0].includes("mesghal") || cells[0].includes("مثقال")) set("gold_mesghal");
+        else if (cells[0].includes("full coin") || cells[0].includes("امامی")) set("coin_emami");
+        else if (cells[0].includes("bahar") || cells[0].includes("بهار")) set("coin_bahar");
+        else if (cells[0].includes("half coin") || cells[0].includes("نیم سکه")) set("coin_half");
+        else if (cells[0].includes("quarter coin") || cells[0].includes("ربع سکه")) set("coin_quarter");
+        else if (cells[0].includes("gram sekke") || cells[0].includes("سکه گرمی")) set("coin_gram");
+        else if (cells[0].includes("silver ounce") || cells[0].includes("انس نقره")) set("silver_ounce");
       }
     }
     if (Object.keys(data).length > Object.keys(best).length) best = data;
@@ -189,7 +198,7 @@ async function fetchGoldAndCoins(): Promise<Record<string, number | string>> {
     await sleep(3000);
   }
   if (best.gold_18k) return best;
-  throw new Error("gold page parsed no prices (empty ItemList/table after 3 attempts)");
+  throw new Error(`gold page parsed no prices after ${URLS.length} attempts (${lastDiag})`);
 }
 
 // Single TradingView symbol quote via the public scanner endpoint (15s timeout).
