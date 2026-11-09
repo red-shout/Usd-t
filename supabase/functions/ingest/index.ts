@@ -82,6 +82,13 @@ function toJalali(gy: number, gm: number, gd: number): [number, number, number] 
 // usdRate=1 ⇒ دلار = قیمتِ درهم (۷۲٬۳۳۰). پگ ثابت است، پس اصلاً اسکرِیپ
 // نمی‌شود — فقط قیمتِ زندهٔ درهم خوانده و در ۳٫۶۷۲۵ ضرب می‌شود.
 const AED_USD_PEG = 3.6725;
+
+// پریمیومِ بازارِ نقرهٔ ۹۲۵ روی ارزشِ فلزِ خالصِ بورس کالا (تصمیم حامد،
+// ۲۰۲۶-۱۱-۰۹): قیمتِ منتشرشده قیمتی است که کاربرِ نهایی با آن می‌خرد.
+// راستی‌آزمایی: tgju (بازار) ۴۳۸٬۲۶۹ در برابر مشتقِ بورس کالا ۴۱۴٬۱۴۴ ⇒
+// ۱٫۰۵۸؛ نرخ‌آرا ۹۹۹ِ بازار ۴۷۲٬۰۷۰ در برابر ۹۹۹ِ بورس کالا ۴۴۷٬۷۲۳ ⇒
+// ۱٫۰۵۴؛ پریمیومِ مشابه در طلای ۱۸ عیارِ خرده‌فروشی ~۶٪ است. پس ۱٫۰۶.
+const SILVER_BAZAAR_PREMIUM = 1.06;
 async function fetchUsdFromAedPeg(): Promise<number | null> {
   const aedHtml = await get("https://alanchand.com/en/currencies-price/aed");
 
@@ -424,12 +431,14 @@ Deno.serve(async (req) => {
   } catch (_) { /* no previous row -> guards skip */ }
 
   // نقرهٔ ۹۲۵ = مشتق از شمش ۹۹۹.۹ بورس کالا (صفحهٔ silver-price الان چند).
-  // از ۲۰۲۶-۱۱-۰۹ tgju کاملاً حذف شد (تصمیم حامد). fallback = آخرین مقدارِ
-  // خوب، وگرنه null. توجه: مقدارهای silver_gramِ پیش از این تاریخ از tgju
-  // بودند و ~۶٪ بالاترند؛ نمودارِ نقره در تاریخِ تغییرِ منبع یک پلهٔ ~۶٪ به
-  // پایین نشان می‌دهد — تغییرِ منبع است، نه سقوطِ قیمت.
+  // از ۲۰۲۶-۱۱-۰۹ tgju کاملاً حذف شد (تصمیم حامد). روی مقدارِ بورس کالا
+  // پریمیومِ بازار اضافه می‌شود (SILVER_BAZAAR_PREMIUM) چون قیمتِ منتشرشده
+  // قیمتی است که کاربرِ نهایی با آن می‌خرد — ارزشِ فلزِ خالص نیست.
+  // fallback = آخرین مقدارِ خوبِ منتشرشده، وگرنه null.
+  let silverBase: number | null = null;
   if (silverRes.v !== null) {
-    market.silver_gram = silverRes.v;
+    silverBase = silverRes.v;
+    market.silver_gram = Math.round(silverRes.v * SILVER_BAZAAR_PREMIUM);
   } else {
     const prevSilver = prev?.silver_gram;
     if (prevSilver != null && Number(prevSilver) > 100000) {
@@ -498,14 +507,14 @@ Deno.serve(async (req) => {
   // (۹۲۵ = انس × دلار ÷ ۳۱٫۱۰۳۵ × ۰٫۹۲۵). باند عامدانه گشاده است چون بورس
   // کالا فقط در ساعتِ معاملات به‌روز می‌شود و انس شبانه‌روز حرکت می‌کند؛
   // اگر از باند خارج شد، یا صفحهٔ الان چند یا انسِ جهانی اشتباه می‌کند ⇒
-  // خطا (⇒ هشدار).
-  let silverXcheck: { ime_derived: number; spot_derived: number; ratio: number } | null = null;
-  if (market.silver_gram != null && market.silver_ounce != null && market.usd != null) {
+  // خطا (⇒ هشدار). کراس‌چک روی مقدارِ پایه (پیش از پریمیوم) است.
+  let silverXcheck: { ime_derived: number; spot_derived: number; ratio: number; published: number } | null = null;
+  if (silverBase != null && market.silver_ounce != null && market.usd != null) {
     const spot = Number(market.silver_ounce) * Number(market.usd) / 31.1035 * 0.925;
-    const ratio = Number(market.silver_gram) / spot;
-    silverXcheck = { ime_derived: Number(market.silver_gram), spot_derived: Math.round(spot), ratio: Math.round(ratio * 1000) / 1000 };
+    const ratio = silverBase / spot;
+    silverXcheck = { ime_derived: silverBase, spot_derived: Math.round(spot), ratio: Math.round(ratio * 1000) / 1000, published: Number(market.silver_gram) };
     if (spot > 0 && (ratio < 0.93 || ratio > 1.07)) {
-      errors.push(`silver_xcheck: ime ${market.silver_gram} vs spot-derived ${silverXcheck.spot_derived} (ratio ${silverXcheck.ratio}, want 0.93-1.07)`);
+      errors.push(`silver_xcheck: ime ${silverBase} vs spot-derived ${silverXcheck.spot_derived} (ratio ${silverXcheck.ratio}, want 0.93-1.07)`);
     }
   }
 
@@ -599,6 +608,9 @@ Deno.serve(async (req) => {
       const prevP = arr[i - 1].p;
       if (!prevP) continue;
       const step = ((arr[i].p - prevP) / prevP) * 100;
+      // جهشِ بیش از ۱۵٪ در ۱۵ دقیقه آرتیفکتِ داده است (مثلاً بعد از اصلاحِ
+      // منبع — دلار ۲۶۷٪ و نقره ۹۰٪ در ۹ نوامبر) نه نوسانِ بازار؛ نادیده بگیر.
+      if (Math.abs(step) > 15) continue;
       if (Math.abs(step) > Math.abs(peak)) peak = step;
     }
     // Dynamic bar: max(floor, multiplier x p90 of this symbol's own 15-min steps).
@@ -608,7 +620,8 @@ Deno.serve(async (req) => {
       const steps: number[] = [];
       for (let i = 1; i < arr.length; i++) {
         const prevP = arr[i - 1].p;
-        if (prevP) steps.push(Math.abs(((arr[i].p - prevP) / prevP) * 100));
+        // همان فیلترِ آرتیفکت: وگرنه یک جهشِ ۲۶۷٪ آستانهٔ پویا را خراب می‌کند.
+        if (prevP) { const st = Math.abs(((arr[i].p - prevP) / prevP) * 100); if (st <= 15) steps.push(st); }
       }
       if (steps.length >= 8) {
         steps.sort((a, b) => a - b);
@@ -629,13 +642,22 @@ Deno.serve(async (req) => {
     { t: "#نقره", s: ["silver_gram"] },
     { t: "#انرژی", s: ["oil"] },
   ];
+  // بخش‌ها هرگز ناپدید نمی‌شوند: اگر مقدارِ تازه null بود، آخرین قیمتِ خوب
+  // با برچسبِ «آخرین قیمت» می‌آید، و اگر هیچ سابقه‌ای نبود «—».
   const sectionBlock = SECTIONS.map(({ t, s }) => {
-    const lines = s.filter((x) => market[x] !== null).map((x) => {
-      const c = Number(market[x]); const lp = lastPrice(x); const d30 = lp ? ((c - lp) / lp) * 100 : null;
-      return `${EMO[x]} <b>${NAME[x]}</b>  ${fmtVal(x, c)}${badge(d30)}`;
+    const lines = s.map((x) => {
+      if (market[x] !== null && market[x] !== undefined) {
+        const c = Number(market[x]); const lp = lastPrice(x); const d30 = lp ? ((c - lp) / lp) * 100 : null;
+        return `${EMO[x]} <b>${NAME[x]}</b>  ${fmtVal(x, c)}${badge(d30)}`;
+      }
+      const lp = lastPrice(x);
+      if (lp !== null && lp !== undefined) {
+        return `${EMO[x]} <b>${NAME[x]}</b>  ${fmtVal(x, Number(lp))} <i>(آخرین قیمت)</i>`;
+      }
+      return `${EMO[x]} <b>${NAME[x]}</b>  —`;
     });
-    return lines.length ? `${t}\n${lines.join("\n")}` : "";
-  }).filter(Boolean).join("\n\n");
+    return `${t}\n${lines.join("\n")}`;
+  }).join("\n\n");
 
   const alertBlock = big2h.length
     ? `<b>🚨 نوسانِ ${volatilityWindowMin === 60 ? "1 ساعته" : `${volatilityWindowMin} ساعته`}</b>\n${big2h.map((a) => `${NAME[a.s]} ${a.p > 0 ? "▲" : "▼"}${decTxt(Math.abs(a.p))}%`).join("\n")}`
@@ -643,8 +665,12 @@ Deno.serve(async (req) => {
 
   let tg: any = null;
   let sentDigest = false;
+  let testMessage: string | null = null;
   if (wantsTest) {
-    tg = await sendTelegram(`✅ <b>پالس بازار</b> — پیام تستی\n📅 ${market.date_shamsi} · دلار ${market.usd ? faInt(market.usd) : "—"} تومان`);
+    // تست دیگر به کانالِ عمومی نمی‌رود (قبلاً هر فراخوانیِ تست یک پیامِ اضافه
+    // در کانال می‌ساخت)؛ متنِ پیام در پاسخ برمی‌گردد.
+    testMessage = `✅ <b>پالس بازار</b> — پیام تستی\n📅 ${market.date_shamsi} · دلار ${market.usd ? faInt(market.usd) : "—"} تومان`;
+    tg = { skipped: "test mode: not sent to channel" };
   } else {
     const hasBaseline = watched.some((s) => lastPrice(s) != null);
     // quiet = market has moved less than quietPct since the last cycle AND no
@@ -741,7 +767,7 @@ function downsample<T>(arr: T[], n: number): T[] {
   }
 
   return new Response(JSON.stringify({
-    ok: true, ms: Date.now() - started, market, errors, rejected, alert, silver_xcheck: silverXcheck,
+    ok: true, ms: Date.now() - started, market, errors, rejected, alert, silver_xcheck: silverXcheck, test_message: testMessage,
     history_rows: rows.length, digest_sent: sentDigest, telegram: tg, github: gh, oil_source: OIL_SRC,
     ...(wantsDebugOil ? { oil_debug: OIL_DEBUG } : {}),
   }, null, 2), { headers: { "Content-Type": "application/json" } });
