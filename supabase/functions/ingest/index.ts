@@ -367,6 +367,39 @@ async function fetchUsdtUsdRate(): Promise<{ v: number | null; err?: string }> {
   return { v: null, err: "no USDTUSD quote in 0.98-1.02" };
 }
 
+// تتر از «الان چند» — صفحهٔ crypto-price/usdt (بخش کریپتو، نه ارزها).
+// قیمتِ اصلی صفحه: <b data-live="x.usdt">۲۵۲,۹۷۱</b> (ارقام فارسی)؛
+// پشتیبان: data-toman="252971" در ورودیِ مبدل. باندِ ۱۰۰٬۰۰۰–۱٬۰۰۰٬۰۰۰
+// تومان مثل قبل. اگر صفحه در دسترس نبود، فرمول (پایین‌تر) جایگزین می‌شود.
+async function fetchUsdtFromAlanchand(): Promise<{ v: number | null; err?: string }> {
+  const attempts = 2;
+  let lastErr = "unknown";
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 20000);
+      const r = await fetch("https://alanchand.com/crypto-price/usdt", {
+        headers: { "user-agent": UA, "accept": "text/html", "accept-language": "fa-IR,fa;q=0.9" },
+        signal: ctl.signal,
+      });
+      clearTimeout(t);
+      if (!r.ok) { lastErr = `HTTP ${r.status}`; await sleep(3000); continue; }
+      const html = await r.text();
+      const hero = html.match(/<b[^>]*data-live="x\.usdt"[^>]*>([\d٬,٫.]+)<\/b>/);
+      const conv = hero ? null : html.match(/data-toman="(\d+)"/);
+      const raw = hero?.[1] ?? conv?.[1] ?? null;
+      const v = raw != null ? faDigitsToNum(raw) : NaN;
+      if (Number.isFinite(v) && v > 100000 && v < 1000000) return { v: Math.round(v) };
+      lastErr = `unparsed (raw=${String(raw).slice(0, 40)})`;
+      await sleep(3000);
+    } catch (e) {
+      lastErr = (e as Error).name + ":" + (e as Error).message;
+      await sleep(3000);
+    }
+  }
+  return { v: null, err: lastErr };
+}
+
 // دلارِ بان‌بست (کراس‌چک مستقل و رایگان برای دلارِ ما — بدون tgju).
 // جریان: GET صفحهٔ اصلی ⇒ پارامِ تازه از JS درون‌صفحه‌ای
 // ($.post('/json', {param: "HASH,CODE,TIMESTAMP"})) ⇒ POST به /json با همان
@@ -511,12 +544,18 @@ Deno.serve(async (req) => {
   jobs.push(fetchGoldAndCoins().then((d) => Object.assign(market, d)).catch((e) => errors.push(`gold: ${e.message}`)));
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
   // نرخ جهانی USDT/USD را موازی می‌گیریم؛ خودِ تتر بعد از معلوم‌شدنِ دلار
-  // از فرمول حساب می‌شود (پایین‌تر).
+  // از فرمول حساب می‌شود (پایین‌تر) — مگر اینکه «الان چند» تتر داشته باشد.
   let usdtUsdRate: number | null = null;
   jobs.push(fetchUsdtUsdRate().then((r) => {
     if (r.v !== null) usdtUsdRate = r.v;
     else errors.push(`usdt_rate: ${r.err}, using 1.0`);
   }).catch((e) => errors.push(`usdt_rate: ${e.message}, using 1.0`)));
+  // تتر از «الان چند» (اولویت اول).
+  let alanchandUsdt: number | null = null;
+  jobs.push(fetchUsdtFromAlanchand().then((r) => {
+    if (r.v !== null) alanchandUsdt = r.v;
+    else errors.push(`usdt: alanchand unavailable (${r.err}), formula fallback`);
+  }).catch((e) => errors.push(`usdt: ${e.message}, formula fallback`)));
   // بان‌بست فقط کراس‌چک است (قیمتِ دلار از درهم × پگ می‌آید)؛ چکِ ساعتی
   // کافی است — ۳ چرخه از ۴ اصلاً درخواست نمی‌فرستند (۱۴۴ درخواست در روز
   // کمتر). چرخهٔ سرِ هر ساعتِ UTC کراس‌چک می‌کند.
@@ -553,11 +592,12 @@ Deno.serve(async (req) => {
     }
   }
 
-  // تترِ استاندارد از فرمول: USDT_TMN = USD_TMN × USDTUSD جهانی (تریدینگ‌ویو).
-  // قیمتِ بازارِ ایران در نظر گرفته نمی‌شود (تصمیم حامد، ۲۰۲۶-۱۱-۱۰)؛ اگر
-  // نرخِ جهانی در دسترس نبود، ۱٫۰ می‌گیریم (تتر ≈ دلار) و خطا بالاتر ثبت
-  // شده است. اگر دلارِ این چرخه null بود، آخرین تترِ خوب می‌ماند.
-  if (market.usd != null) {
+  // تتر: اول از «الان چند» (صفحهٔ crypto-price/usdt)؛ اگر آنجا نبود، از
+  // فرمولِ استاندارد: USDT_TMN = USD_TMN × USDTUSD جهانی (تریدینگ‌ویو).
+  // اگر دلارِ این چرخه هم null بود، آخرین تترِ خوب می‌ماند.
+  if (alanchandUsdt !== null) {
+    market.usdt = alanchandUsdt;
+  } else if (market.usd != null) {
     market.usdt = Math.round(Number(market.usd) * (usdtUsdRate ?? 1));
   } else if (prev?.usdt != null && Number(prev.usdt) > 100000) {
     market.usdt = Number(prev.usdt);
