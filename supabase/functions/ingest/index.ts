@@ -353,36 +353,18 @@ async function fetchSilver925FromAlanchand(): Promise<{ v: number | null; v999?:
   return { v: null, err: lastErr };
 }
 
-// تتر (تومان) — API عمومی و رایگان والکس (بدون کلید): نتیجهٔ
-// result.symbols.USDTTMN.stats؛ قیمت = میانهٔ bid/ask (اسپرد معمولاً ۱ تومان
-// است؛ lastPrice هم همان‌قدر است). اگر والکس در دسترس نبود، خطا می‌رود.
-async function fetchUsdtFromWallex(): Promise<{ v: number | null; err?: string }> {
-  const attempts = 2;
-  let lastErr = "unknown";
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const ctl = new AbortController();
-      const t = setTimeout(() => ctl.abort(), 20000);
-      const r = await fetch("https://api.wallex.ir/v1/markets", {
-        headers: { "user-agent": UA, "accept": "application/json" },
-        signal: ctl.signal,
-      });
-      clearTimeout(t);
-      if (!r.ok) { lastErr = `HTTP ${r.status}`; await sleep(3000); continue; }
-      const j = await r.json();
-      const st = j?.result?.symbols?.USDTTMN?.stats;
-      const bid = Number(st?.bidPrice), ask = Number(st?.askPrice), last = Number(st?.lastPrice);
-      let v: number | null = null;
-      if (Number.isFinite(bid) && Number.isFinite(ask) && bid > 0 && ask > 0) v = Math.round((bid + ask) / 2);
-      else if (Number.isFinite(last) && last > 0) v = Math.round(last);
-      if (v === null || v < 100000 || v > 1000000) { lastErr = "implausible USDT stats"; await sleep(3000); continue; }
-      return { v };
-    } catch (e) {
-      lastErr = (e as Error).name + ":" + (e as Error).message;
-      await sleep(3000);
-    }
+// نرخ جهانی تتر به دلار (USDT/USD) — از اسکنر عمومی تریدینگ‌ویو.
+// تترِ تومانی از فرمولِ استاندارد می‌آید: USDT_TMN = USD_TMN × USDTUSD.
+// (قانون حامد، ۲۰۲۶-۱۱-۱۰: هرگز از صرافی ایرانی قیمت نمی‌گیریم — والکس
+// حذف شد؛ قیمتِ بازارِ ایران در نظر گرفته نمی‌شود، فقط قیمتِ استاندارد.)
+// هر سه صرافیِ بزرگِ جهانی همین حالا ~۰٫۹۹۸۸ نشان می‌دهند؛ باندِ ۰٫۹۸–۱٫۰۲
+// یعنی اگر نرخِ برگشتی بیرون از باند بود، مشکوک است و رد می‌شود.
+async function fetchUsdtUsdRate(): Promise<{ v: number | null; err?: string }> {
+  for (const id of ["KRAKEN:USDTUSD", "BITSTAMP:USDTUSD", "COINBASE:USDTUSD"]) {
+    const v = await tvClose(id);
+    if (v !== null && v > 0.98 && v < 1.02) return { v };
   }
-  return { v: null, err: lastErr };
+  return { v: null, err: "no USDTUSD quote in 0.98-1.02" };
 }
 
 // دلارِ بان‌بست (کراس‌چک مستقل و رایگان برای دلارِ ما — بدون tgju).
@@ -528,10 +510,13 @@ Deno.serve(async (req) => {
   jobs.push(fetchAed(aedHtmlP).then((v) => (market.aed = v)).catch((e) => errors.push(`aed: ${e.message}`)));
   jobs.push(fetchGoldAndCoins().then((d) => Object.assign(market, d)).catch((e) => errors.push(`gold: ${e.message}`)));
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
-  jobs.push(fetchUsdtFromWallex().then((r) => {
-    if (r.v !== null) market.usdt = r.v;
-    else errors.push(`usdt: wallex unavailable (${r.err})`);
-  }).catch((e) => errors.push(`usdt: ${e.message}`)));
+  // نرخ جهانی USDT/USD را موازی می‌گیریم؛ خودِ تتر بعد از معلوم‌شدنِ دلار
+  // از فرمول حساب می‌شود (پایین‌تر).
+  let usdtUsdRate: number | null = null;
+  jobs.push(fetchUsdtUsdRate().then((r) => {
+    if (r.v !== null) usdtUsdRate = r.v;
+    else errors.push(`usdt_rate: ${r.err}, using 1.0`);
+  }).catch((e) => errors.push(`usdt_rate: ${e.message}, using 1.0`)));
   // بان‌بست فقط کراس‌چک است (قیمتِ دلار از درهم × پگ می‌آید)؛ چکِ ساعتی
   // کافی است — ۳ چرخه از ۴ اصلاً درخواست نمی‌فرستند (۱۴۴ درخواست در روز
   // کمتر). چرخهٔ سرِ هر ساعتِ UTC کراس‌چک می‌کند.
@@ -568,9 +553,13 @@ Deno.serve(async (req) => {
     }
   }
 
-  // تتر: اگر والکس این چرخه در دسترس نبود، آخرین مقدارِ خوب می‌ماند (خطا
-  // بالاتر ثبت شده است).
-  if (market.usdt === null && prev?.usdt != null && Number(prev.usdt) > 100000) {
+  // تترِ استاندارد از فرمول: USDT_TMN = USD_TMN × USDTUSD جهانی (تریدینگ‌ویو).
+  // قیمتِ بازارِ ایران در نظر گرفته نمی‌شود (تصمیم حامد، ۲۰۲۶-۱۱-۱۰)؛ اگر
+  // نرخِ جهانی در دسترس نبود، ۱٫۰ می‌گیریم (تتر ≈ دلار) و خطا بالاتر ثبت
+  // شده است. اگر دلارِ این چرخه null بود، آخرین تترِ خوب می‌ماند.
+  if (market.usd != null) {
+    market.usdt = Math.round(Number(market.usd) * (usdtUsdRate ?? 1));
+  } else if (prev?.usdt != null && Number(prev.usdt) > 100000) {
     market.usdt = Number(prev.usdt);
   }
 
