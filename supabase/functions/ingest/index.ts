@@ -121,10 +121,14 @@ async function fetchAed(aedHtmlP: Promise<string>): Promise<number | null> {
   return raw ? Math.round(Number(raw.replace(/,/g, "")) / 10) : null;
 }
 
-async function fetchEur(): Promise<number | null> {
-  const html = await get("https://alanchand.com/en/currencies-price/eur");
+// ارزهای فیات از «الان چند» — همان الگوی یورو: صفحهٔ
+// en/currencies-price/<code>، اول JSON-LD با sku کد (قیمت به ریال ÷ ۱۰)،
+// بعد ورودیِ مبدلِ data-price. یورو هم از همین مسیر می‌آید.
+async function fetchCurrency(code: string): Promise<number | null> {
+  const html = await get(`https://alanchand.com/en/currencies-price/${code}`);
+  const sku = code.toUpperCase();
   for (const c of jsonLd(html)) {
-    if (c["@type"] === "Product" && c.sku === "EUR") {
+    if (c["@type"] === "Product" && c.sku === sku) {
       const p = Number(c?.offers?.price ?? 0);
       if (p > 0) return Math.round(p / 10);
     }
@@ -133,6 +137,36 @@ async function fetchEur(): Promise<number | null> {
     attr(html, /<input[^>]*data-curr=["']tmn["'][^>]*data-price=["']([\d,.]+)["']/i) ??
     attr(html, /<input[^>]*data-curr=["']tmn["'][^>]*value=["']([\d,.]+)["']/i);
   return raw ? Math.round(Number(raw.replace(/,/g, "")) / 10) : null;
+}
+
+// نرخ‌های فردایی از کانال‌های تلگرام (به‌خواست حامد، ۲۰۲۶-۱۱-۱۴) — تی‌جی‌یو
+// فید زنده‌ای برای فردایی ندارد و «الان چند» هم ندارد؛ کانال‌های تلگرام
+// تنها منبعِ زنده‌اند. فرمتِ هر دو کانال یکی است:
+//   «دلار فردایی تهران ⏳ 269,500 فروش 🔴» / «هرات فردایی ⏳ 270,300 فروش 🔴»
+// پیش‌نمایشِ عمومی t.me/s/<channel> بدون لاگین خوانده می‌شود؛ پیام‌ها در
+// صفحه به ترتیبِ زمانی‌اند (قدیمی اول، تازه آخر) پس تازه‌ترینِ مطابقِ الگو
+// برمی‌گردد (خرید/فروش/معامله‌شده فرقی نمی‌کند — همه همان لحظه‌اند).
+// باندِ سلامت: ۱۰۰٬۰۰۰ تا ۱٬۰۰۰٬۰۰۰ تومان.
+async function fetchForwardFromTelegram(channel: string, label: string): Promise<{ v: number | null; err?: string }> {
+  try {
+    const html = await get(`https://t.me/s/${channel}`);
+    const re = /<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/g;
+    const esc = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pat = new RegExp(esc + "\\s*⏳\\s*([\\d,]+)");
+    let m: RegExpExecArray | null;
+    let last: number | null = null;
+    while ((m = re.exec(html))) {
+      const text = m[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ");
+      const hit = pat.exec(text);
+      if (hit) {
+        const v = Number(hit[1].replace(/,/g, ""));
+        if (v >= 100000 && v <= 1000000) last = Math.round(v);
+      }
+    }
+    return last !== null ? { v: last } : { v: null, err: "no matching forward quote in page" };
+  } catch (e: any) {
+    return { v: null, err: e?.message ?? String(e) };
+  }
 }
 
 async function fetchGoldAndCoins(): Promise<Record<string, number | string>> {
@@ -321,6 +355,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function faDigitsToNum(s: string): number | null {
   const en = s.replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
     .replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .replace(/٫/g, ".")
     .replace(/[٬,]/g, "");
   const n = Number(en);
   return Number.isFinite(n) ? n : null;
@@ -367,29 +402,40 @@ async function fetchUsdtUsdRate(): Promise<{ v: number | null; err?: string }> {
   return { v: null, err: "no USDTUSD quote in 0.98-1.02" };
 }
 
-// تتر از «الان چند» — صفحهٔ crypto-price/usdt (بخش کریپتو، نه ارزها).
-// قیمتِ اصلی صفحه: <b data-live="x.usdt">۲۵۲,۹۷۱</b> (ارقام فارسی)؛
-// پشتیبان: data-toman="252971" در ورودیِ مبدل. باندِ ۱۰۰٬۰۰۰–۱٬۰۰۰٬۰۰۰
-// تومان مثل قبل. اگر صفحه در دسترس نبود، فرمول (پایین‌تر) جایگزین می‌شود.
-async function fetchUsdtFromAlanchand(): Promise<{ v: number | null; err?: string }> {
+// کریپتو از «الان چند» — صفحهٔ crypto-price/<slug> (بخش کریپتو، نه ارزها).
+// قیمتِ اصلی صفحه: <b data-live="x.<slug>">…</b> (ارقام فارسی)؛
+// پشتیبان: data-toman="…" در ورودیِ مبدل. باندِ سلامت را هر نماد جدا می‌گیرد
+// (تتر ۱۰۰٬۰۰۰–۱٬۰۰۰٬۰۰۰؛ بیت‌کوین میلیاردی است، ریپل صدهزارتومانی).
+// اگر صفحه در دسترس نبود، برای تتر فرمول (پایین‌تر) جایگزین می‌شود.
+async function fetchCryptoFromAlanchand(slug: string, lo: number, hi: number): Promise<{ v: number | null; usd: number | null; err?: string }> {
   const attempts = 2;
   let lastErr = "unknown";
+  const heroRe = new RegExp(`<b[^>]*data-live="x\\.${slug}"[^>]*>([^<]+)<\\/b>`);
+  // قیمت دلاری همان صفحه: <bdi data-live="xu.<slug>">…</bdi> — تگ bdi است نه b،
+  // و مقدار ارقام فارسی است؛ پس کلاس [\d…] در JS (فقط ASCII) هیچ‌وقت نمی‌گرفت
+  // و همهٔ usdها null می‌ماندند. ([^<]+) متنِ عنصر را می‌گیرد و faDigitsToNum
+  // ارقام فارسی/عربی را برمی‌گرداند.
+  const usdRe = new RegExp(`<b[^>]*data-live="xu\\.${slug}"[^>]*>([^<]+)`);
   for (let i = 0; i < attempts; i++) {
     try {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), 20000);
-      const r = await fetch("https://alanchand.com/crypto-price/usdt", {
+      const r = await fetch(`https://alanchand.com/crypto-price/${slug}`, {
         headers: { "user-agent": UA, "accept": "text/html", "accept-language": "fa-IR,fa;q=0.9" },
         signal: ctl.signal,
       });
       clearTimeout(t);
       if (!r.ok) { lastErr = `HTTP ${r.status}`; await sleep(3000); continue; }
       const html = await r.text();
-      const hero = html.match(/<b[^>]*data-live="x\.usdt"[^>]*>([\d٬,٫.]+)<\/b>/);
+      const hero = html.match(heroRe);
       const conv = hero ? null : html.match(/data-toman="(\d+)"/);
       const raw = hero?.[1] ?? conv?.[1] ?? null;
       const v = raw != null ? faDigitsToNum(raw) : NaN;
-      if (Number.isFinite(v) && v > 100000 && v < 1000000) return { v: Math.round(v) };
+      if (Number.isFinite(v) && v > lo && v < hi) {
+        const usdRaw = html.match(usdRe)?.[1] ?? null;
+        const usd = usdRaw != null ? faDigitsToNum(usdRaw) : null;
+        return { v: Math.round(v), usd: usd !== null && Number.isFinite(usd) && usd > 0 ? usd : null };
+      }
       lastErr = `unparsed (raw=${String(raw).slice(0, 40)})`;
       await sleep(3000);
     } catch (e) {
@@ -397,7 +443,21 @@ async function fetchUsdtFromAlanchand(): Promise<{ v: number | null; err?: strin
       await sleep(3000);
     }
   }
-  return { v: null, err: lastErr };
+  return { v: null, usd: null, err: lastErr };
+}
+
+// پالیگان در «الان چند» صفحه ندارد (matic/polygon/pol هر سه ۴۰۴) — قیمتِ
+// جهانی POL از تریدینگ‌ویو × تترِ تومانیِ همین چرخه. POL همان MATIC است
+// (مهاجرت ۲۰۲۴؛ MATICUSDT در بایننس دیگر نیست). بدون صرافیِ ایرانی.
+async function fetchMaticFromTV(usdtToman: number): Promise<{ v: number | null; usd: number | null; err?: string }> {
+  for (const id of ["BINANCE:POLUSDT", "COINBASE:POLUSD"]) {
+    const v = await tvClose(id);
+    if (v !== null && v > 0.01 && v < 10) {
+      const tmn = Math.round(v * usdtToman);
+      if (tmn > 1000 && tmn < 1000000) return { v: tmn, usd: v };
+    }
+  }
+  return { v: null, usd: null, err: "no POL quote in 0.01-10" };
 }
 
 // دلارِ بان‌بست (کراس‌چک مستقل و رایگان برای دلارِ ما — بدون tgju).
@@ -473,11 +533,13 @@ async function rest(path: string, opts: RequestInit = {}): Promise<any> {
 const FA = (s: unknown) => String(s);
 const faInt = (n: number) => Math.round(n).toLocaleString("en-US");
 const faDec = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// قیمت دلاری کریپتو: تا ۴ رقم اعشار، بدون صفرهای اضافه (۷۴٬۰۱۶ / ۱٫۰۶۳ / ۰٫۰۸۸۷).
+const faUsd = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 4 });
 // price text, no digit substitution
 const intTxt = (n: number) => Math.round(n).toLocaleString("en-US");
 const decTxt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const EMO: Record<string, string> = { usd: "💵", eur: "🇪🇺", aed: "🇦🇪", usdt: "₮", gold_18k: "✨", gold_mesghal: "⚖️", coin_emami: "🪙", coin_gram: "🪙", gold_ounce: "🌐", silver_ounce: "🥈", silver_gram: "🥈", oil: "⛽" };
-const NAME: Record<string, string> = { usd: "دلار", eur: "یورو", aed: "درهم", usdt: "تتر", gold_18k: "طلای 18ع", gold_mesghal: "مثقال طلا", coin_emami: "سکه امامی", coin_gram: "سکه گرمی", gold_ounce: "انس طلا", silver_ounce: "انس نقره", silver_gram: "نقرهٔ 925 (هر گرم)", oil: "نفت برنت" };
+const EMO: Record<string, string> = { usd: "🇺🇸", cad: "🇨🇦", eur: "🇪🇺", aed: "🇦🇪", cny: "🇨🇳", try: "🇹🇷", usd_fardayi: "⏳", usd_herat_fardayi: "🇦🇫", usdt: "💲", btc: "🟠", eth: "🔷", sol: "☀️", bnb: "🟡", xrp: "💧", matic: "🟣", coin_emami: "🥇", coin_half: "🥈", coin_quarter: "🥉", coin_gram: "🪙", gold_ounce: "🌐", gold_mesghal: "⚖️", gold_18k: "✨", gold_24k: "💛", silver_gram: "🤍", silver_ounce: "⚪", coin_bahar: "🏅", oil: "⛽" };
+const NAME: Record<string, string> = { usd: "دلار امریکا", cad: "دلار کانادا", eur: "یورو", aed: "درهم امارات", cny: "یوان چین", try: "لیر ترکیه", usd_fardayi: "دلار فردایی", usd_herat_fardayi: "هرات فردایی", usdt: "تتر", btc: "بیت کوین", eth: "اتریوم", sol: "سولانا", bnb: "بی ان بی", xrp: "ریپل", matic: "پالیگان", coin_emami: "سکه امامی", coin_half: "نیم سکه", coin_quarter: "ربع سکه", coin_gram: "سکه گرمی", gold_ounce: "انس طلا - جهانی", gold_mesghal: "آب‌شده (مثقال)", gold_18k: "طلای ۱۸ عیار", gold_24k: "طلای ۲۴ عیار", silver_gram: "نقره ۹۲۵", silver_ounce: "انس نقره", coin_bahar: "سکه بهار آزادی", oil: "نفت برنت" };
 
 async function sendTelegram(text: string) {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
@@ -533,13 +595,26 @@ Deno.serve(async (req) => {
   const wantsTest = new URL(req.url).searchParams.get("test") === "1";
   const wantsAlertTest = new URL(req.url).searchParams.get("alert_test") === "1";
   const wantsDebugOil = new URL(req.url).searchParams.get("debug_oil") === "1";
-  const market: Record<string, any> = { usd: null, eur: null, aed: null, usdt: null, gold_18k: null, gold_mesghal: null, gold_ounce: null, silver_ounce: null, silver_gram: null, coin_emami: null, coin_bahar: null, coin_half: null, coin_quarter: null, coin_gram: null, oil: null };
+  const market: Record<string, any> = { usd: null, eur: null, aed: null, usdt: null, cad: null, cny: null, try: null, usd_fardayi: null, usd_herat_fardayi: null, btc: null, eth: null, sol: null, bnb: null, xrp: null, matic: null, btc_usd: null, eth_usd: null, sol_usd: null, bnb_usd: null, xrp_usd: null, matic_usd: null, gold_18k: null, gold_24k: null, gold_mesghal: null, gold_ounce: null, silver_ounce: null, silver_gram: null, coin_emami: null, coin_bahar: null, coin_half: null, coin_quarter: null, coin_gram: null, oil: null };
   const errors: string[] = [];
 
-  const jobs: Promise<void>[] = [];
+  const jobs: Promise<unknown>[] = [];
   const aedHtmlP = get("https://alanchand.com/en/currencies-price/aed");
   jobs.push(fetchUsdFromAedPeg(aedHtmlP).then((v) => (market.usd = v)).catch((e) => errors.push(`usd: ${e.message}`)));
-  jobs.push(fetchEur().then((v) => (market.eur = v)).catch((e) => errors.push(`eur: ${e.message}`)));
+  jobs.push(fetchCurrency("eur").then((v) => (market.eur = v)).catch((e) => errors.push(`eur: ${e.message}`)));
+  jobs.push(fetchCurrency("cad").then((v) => (market.cad = v)).catch((e) => errors.push(`cad: ${e.message}`)));
+  jobs.push(fetchCurrency("cny").then((v) => (market.cny = v)).catch((e) => errors.push(`cny: ${e.message}`)));
+  jobs.push(fetchCurrency("try").then((v) => (market.try = v)).catch((e) => errors.push(`try: ${e.message}`)));
+  // نرخ‌های فردایی از تلگرام (۲۰۲۶-۱۱-۱۴): دلار فردایی تهران از @pi_jt،
+  // هرات فردایی از @turan_Ex — هر دو با همان فرمتِ «نام ⏳ عدد فروش/خرید».
+  jobs.push(fetchForwardFromTelegram("pi_jt", "دلار فردایی تهران").then((r) => {
+    if (r.v !== null) market.usd_fardayi = r.v;
+    else errors.push(`usd_fardayi: telegram unavailable (${r.err})`);
+  }).catch((e) => errors.push(`usd_fardayi: ${e.message}`)));
+  jobs.push(fetchForwardFromTelegram("turan_Ex", "هرات فردایی").then((r) => {
+    if (r.v !== null) market.usd_herat_fardayi = r.v;
+    else errors.push(`usd_herat_fardayi: telegram unavailable (${r.err})`);
+  }).catch((e) => errors.push(`usd_herat_fardayi: ${e.message}`)));
   jobs.push(fetchAed(aedHtmlP).then((v) => (market.aed = v)).catch((e) => errors.push(`aed: ${e.message}`)));
   jobs.push(fetchGoldAndCoins().then((d) => Object.assign(market, d)).catch((e) => errors.push(`gold: ${e.message}`)));
   jobs.push(fetchOil().then((v) => (market.oil = v)).catch((e) => errors.push(`oil: ${e.message}`)));
@@ -550,12 +625,24 @@ Deno.serve(async (req) => {
     if (r.v !== null) usdtUsdRate = r.v;
     else errors.push(`usdt_rate: ${r.err}, using 1.0`);
   }).catch((e) => errors.push(`usdt_rate: ${e.message}, using 1.0`)));
-  // تتر از «الان چند» (اولویت اول).
+  // تتر از «الان چند» (اولویت اول)؛ بقیهٔ کریپتو هم از همان‌جا، هر کدام با
+  // باندِ سلامتِ خودش.
   let alanchandUsdt: number | null = null;
-  jobs.push(fetchUsdtFromAlanchand().then((r) => {
+  jobs.push(fetchCryptoFromAlanchand("usdt", 100000, 1000000).then((r) => {
     if (r.v !== null) alanchandUsdt = r.v;
     else errors.push(`usdt: alanchand unavailable (${r.err}), formula fallback`);
   }).catch((e) => errors.push(`usdt: ${e.message}, formula fallback`)));
+  const cryptoBands: Record<string, [number, number]> = {
+    btc: [1e9, 1e11], eth: [1e7, 1e10], sol: [1e6, 1e9], bnb: [1e6, 1e10], xrp: [10000, 10000000],
+  };
+  for (const [slug, [lo, hi]] of Object.entries(cryptoBands)) {
+    jobs.push(fetchCryptoFromAlanchand(slug, lo, hi).then((r) => {
+      if (r.v !== null) {
+        (market as any)[slug] = r.v;
+        if (r.usd !== null) (market as any)[slug + "_usd"] = r.usd;
+      } else errors.push(`${slug}: alanchand unavailable (${r.err})`);
+    }).catch((e) => errors.push(`${slug}: ${e.message}`)));
+  }
   // بان‌بست فقط کراس‌چک است (قیمتِ دلار از درهم × پگ می‌آید)؛ چکِ ساعتی
   // کافی است — ۳ چرخه از ۴ اصلاً درخواست نمی‌فرستند (۱۴۴ درخواست در روز
   // کمتر). چرخهٔ سرِ هر ساعتِ UTC کراس‌چک می‌کند.
@@ -569,7 +656,7 @@ Deno.serve(async (req) => {
   // نشد (اولین اجرا یا قطعی DB) گاردریل رد می‌شود، نه کل چرخه.
   let prev: Record<string, any> | null = null;
   try {
-    const prevRows = await rest("market?id=eq.1&select=usd,eur,aed,usdt,gold_18k,gold_mesghal,gold_ounce,silver_ounce,silver_gram,coin_emami,coin_bahar,coin_half,coin_quarter,coin_gram,oil") as any[];
+    const prevRows = await rest("market?id=eq.1&select=usd,eur,aed,usdt,cad,cny,try,usd_fardayi,usd_herat_fardayi,btc,eth,sol,bnb,xrp,matic,btc_usd,eth_usd,sol_usd,bnb_usd,xrp_usd,matic_usd,gold_18k,gold_24k,gold_mesghal,gold_ounce,silver_ounce,silver_gram,coin_emami,coin_bahar,coin_half,coin_quarter,coin_gram,oil") as any[];
     prev = prevRows?.[0] ?? null;
   } catch (_) { /* no previous row -> guards skip */ }
 
@@ -603,6 +690,27 @@ Deno.serve(async (req) => {
     market.usdt = Number(prev.usdt);
   }
 
+  // پالیگان: قیمت جهانی POL × تترِ تومانیِ همین چرخه (بعد از اینکه تتر
+  // معلوم شد). اگر تریدینگ‌ویو نداد، آخرین مقدار خوب می‌ماند.
+  if (market.usdt != null) {
+    const mr = await fetchMaticFromTV(Number(market.usdt));
+    if (mr.v !== null) {
+      market.matic = mr.v;
+      if (mr.usd !== null) market.matic_usd = mr.usd;
+    } else {
+      errors.push(`matic: ${mr.err}, kept last good`);
+      if (prev?.matic != null && Number(prev.matic) > 0) market.matic = Number(prev.matic);
+      if (prev?.matic_usd != null && Number(prev.matic_usd) > 0) market.matic_usd = Number(prev.matic_usd);
+    }
+  } else if (prev?.matic != null && Number(prev.matic) > 0) {
+    market.matic = Number(prev.matic);
+    if (prev?.matic_usd != null && Number(prev.matic_usd) > 0) market.matic_usd = Number(prev.matic_usd);
+  }
+
+  // طلای ۲۴ عیار: تبدیل خلوص از ۱۸ عیار (×۲۴/۱۸) — همان بازار، عیار دیگر؛
+  // مثل نقرهٔ ۹۲۵ که از شمش ۹۹۹ مشتق می‌شود. صفحهٔ طلا ۲۴ عیارِ گرمی ندارد.
+  if (market.gold_18k != null) market.gold_24k = Math.round(Number(market.gold_18k) * 4 / 3);
+
   // ---- گاردریل قیمت (بستهٔ اطمینان، ۲۰۲۶-۱۱-۰۹)
   // هر مقدارِ تازه باید (۱) نسبت به چرخهٔ قبل جهشِ ناممکن نداشته باشد و
   // (۲) با قیمت‌های هم‌خانواده سازگار باشد. در غیر این صورت مقدارِ قبلیِ خوب
@@ -611,7 +719,11 @@ Deno.serve(async (req) => {
   // به‌جای ۲۶۵٬۰۰۰) است، نه نوسانِ واقعیِ بازار.
   const MOVE_LIMIT: Record<string, number> = {
     usd: 0.08, eur: 0.08, aed: 0.08, usdt: 0.08,
-    gold_18k: 0.06, gold_mesghal: 0.06, gold_ounce: 0.03, silver_ounce: 0.05,
+    cad: 0.08, cny: 0.08, try: 0.08,
+    usd_fardayi: 0.08, usd_herat_fardayi: 0.08,
+    btc: 0.10, eth: 0.10, sol: 0.10, bnb: 0.10, xrp: 0.10, matic: 0.10,
+    btc_usd: 0.10, eth_usd: 0.10, sol_usd: 0.10, bnb_usd: 0.10, xrp_usd: 0.10, matic_usd: 0.10,
+    gold_18k: 0.06, gold_24k: 0.06, gold_mesghal: 0.06, gold_ounce: 0.03, silver_ounce: 0.05,
     silver_gram: 0.08, coin_emami: 0.06, coin_bahar: 0.06, coin_half: 0.06,
     coin_quarter: 0.06, coin_gram: 0.06, oil: 0.08,
   };
@@ -639,6 +751,16 @@ Deno.serve(async (req) => {
     const implied = Number(market.aed) * AED_USD_PEG;
     if (implied > 0 && Math.abs(Number(market.usd) - implied) / implied > 0.02) {
       rejectSymbol("usd", `vs aed-peg: usd=${market.usd} aed*3.6725=${Math.round(implied)}`);
+    }
+  }
+  // (۳) نرخ‌های فردایی باید نزدیک دلارِ نقد باشند (معمولاً ۰ تا ۲٪ بالاتر)؛
+  // باند ۰٫۹۰–۱٫۱۰: بیرون از باند یعنی پارسِ تلگرام عددِ اشتباه گرفته.
+  for (const s of ["usd_fardayi", "usd_herat_fardayi"] as const) {
+    if (market[s] != null && market.usd != null) {
+      const ratio = Number(market[s]) / Number(market.usd);
+      if (ratio < 0.90 || ratio > 1.10) {
+        rejectSymbol(s, `vs usd-spot: ${s}=${market[s]} usd=${market.usd} (ratio ${ratio.toFixed(3)}, want 0.90-1.10)`);
+      }
     }
   }
   // (۴) طلای ۱۸ عیار باید نزدیک انس × دلار باشد (با تلورانسِ پریمیومِ داخلی)
@@ -727,7 +849,7 @@ Deno.serve(async (req) => {
 
   // snapshot + history  (only the real numeric columns go to the table;
   // updated_iso/date/time live inside `payload` only)
-  const FIELDS = ["usd", "eur", "aed", "usdt", "gold_18k", "gold_mesghal", "gold_ounce", "silver_ounce", "silver_gram", "coin_emami", "coin_bahar", "coin_half", "coin_quarter", "coin_gram", "oil"] as const;
+  const FIELDS = ["usd", "eur", "aed", "usdt", "cad", "cny", "try", "usd_fardayi", "usd_herat_fardayi", "btc", "eth", "sol", "bnb", "xrp", "matic", "btc_usd", "eth_usd", "sol_usd", "bnb_usd", "xrp_usd", "matic_usd", "gold_18k", "gold_24k", "gold_mesghal", "gold_ounce", "silver_ounce", "silver_gram", "coin_emami", "coin_bahar", "coin_half", "coin_quarter", "coin_gram", "oil"] as const;
   const row: Record<string, any> = { id: 1, updated_at: now.toISOString(), payload: market };
   for (const f of FIELDS) row[f] = market[f];
   await rest("market?on_conflict=id", {
@@ -736,7 +858,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify(row),
   });
 
-  const watched = ["usd", "eur", "aed", "usdt", "gold_18k", "gold_mesghal", "coin_emami", "coin_gram", "gold_ounce", "silver_gram", "oil"];
+  const watched = ["usd", "cad", "eur", "aed", "cny", "try", "usd_fardayi", "usd_herat_fardayi", "usdt", "btc", "eth", "sol", "bnb", "xrp", "matic", "gold_18k", "gold_24k", "gold_mesghal", "coin_emami", "coin_half", "coin_quarter", "coin_gram", "gold_ounce", "silver_gram", "oil"];
   const rows = watched.filter((s) => market[s] !== null).map((s) => ({
     symbol: s, price: Number(market[s]), ts: now.toISOString(),
   }));
@@ -822,16 +944,42 @@ Deno.serve(async (req) => {
   let moveMax = 0;
   for (const s of watched) { const lp = lastPrice(s); const c = Number(market[s]); if (lp && c) moveMax = Math.max(moveMax, Math.abs((c - lp) / lp) * 100); }
 
+  // کریپتو (به‌جز تتر) دو قیمته است: دلار در خط اصلی، تومان در خط زیرش با
+  // خط‌تیره در ابتدا تا از خط اصلی تشخیص داده شود.
+  const DUAL_CRYPTO = ["btc", "eth", "sol", "bnb", "xrp", "matic"];
+  // قیمت دلاری کریپتو: اول مقدار تازهٔ همین چرخه، وگرنه آخرین مقدار خوبِ جدول market.
+  const usdOf = (x: string): number | null => {
+    const v = market[x + "_usd"];
+    if (v !== null && v !== undefined && Number(v) > 0) return Number(v);
+    const pv = prev ? Number((prev as any)[x + "_usd"]) : NaN;
+    return Number.isFinite(pv) && pv > 0 ? pv : null;
+  };
   const SECTIONS = [
-    { t: "#ارزها", s: ["usd", "eur", "aed", "usdt"] },
-    { t: "#طلاوسکه", s: ["gold_18k", "gold_mesghal", "gold_ounce", "coin_emami", "coin_gram"] },
-    { t: "#نقره", s: ["silver_gram"] },
+    { t: "#ارزها", s: ["usd", "usd_fardayi", "usd_herat_fardayi", "cad", "eur", "aed", "cny", "try"] },
+    { t: "#کریپتو", s: ["usdt", "btc", "eth", "sol", "bnb", "xrp", "matic"] },
+    { t: "#طلاوسکه", s: ["coin_emami", "coin_half", "coin_quarter", "coin_gram", "gold_ounce", "gold_mesghal", "gold_18k", "gold_24k", "silver_gram"] },
     { t: "#انرژی", s: ["oil"] },
   ];
   // بخش‌ها هرگز ناپدید نمی‌شوند: اگر مقدارِ تازه null بود، آخرین قیمتِ خوب
   // با برچسبِ «آخرین قیمت» می‌آید، و اگر هیچ سابقه‌ای نبود «—».
   const sectionBlock = SECTIONS.map(({ t, s }) => {
     const lines = s.map((x) => {
+      if (DUAL_CRYPTO.includes(x)) {
+        const usd = usdOf(x);
+        const tmn = market[x] != null ? Number(market[x]) : null;
+        if (tmn !== null && usd !== null) {
+          return `${EMO[x]} <b>${NAME[x]}</b>  ${faUsd(usd)} دلار\n- ${faInt(tmn)} تومان`;
+        }
+        if (tmn !== null) {
+          return `${EMO[x]} <b>${NAME[x]}</b>  ${faInt(tmn)} تومان`;
+        }
+        const lp = lastPrice(x);
+        if (lp !== null && lp !== undefined) {
+          if (usd !== null) return `${EMO[x]} <b>${NAME[x]}</b>  ${faUsd(usd)} دلار\n- ${faInt(Number(lp))} تومان <i>(آخرین قیمت)</i>`;
+          return `${EMO[x]} <b>${NAME[x]}</b>  ${faInt(Number(lp))} تومان <i>(آخرین قیمت)</i>`;
+        }
+        return `${EMO[x]} <b>${NAME[x]}</b>  —`;
+      }
       if (market[x] !== null && market[x] !== undefined) {
         const c = Number(market[x]); const lp = lastPrice(x); const d30 = lp ? ((c - lp) / lp) * 100 : null;
         return `${EMO[x]} <b>${NAME[x]}</b>  ${fmtVal(x, c)}${badge(d30)}`;
@@ -842,7 +990,12 @@ Deno.serve(async (req) => {
       }
       return `${EMO[x]} <b>${NAME[x]}</b>  —`;
     });
-    return `${t}\n${lines.join("\n")}`;
+    // جداکنندهٔ بین آیتم‌های کریپتو (به‌خواست حامد، ۲۰۲۶-۱۱-۱۱): خط نازک بین هر دو
+    // ارز تا آیتم‌های دوخطه به هم نچسبند. فقط بخش #کریپتو؛ بقیهٔ بخش‌ها بی‌تغییر.
+    // خط فقط از کاراکتر خنثی ─ ساخته شده و تلگرام چنین خطی را چپ‌چین می‌کند؛
+    // RLM ‏(U+200F)‏ در ابتدای خط جهت آن را راست‌به‌چپ می‌کند تا راست‌چین شود.
+    const joiner = t === "#کریپتو" ? `\n${"\u200F" + "─".repeat(10)}\n` : "\n";
+    return `${t}\n${lines.join(joiner)}`;
   }).join("\n\n");
 
   const alertBlock = big2h.length
