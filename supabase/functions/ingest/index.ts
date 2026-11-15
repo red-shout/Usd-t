@@ -538,8 +538,8 @@ const faUsd = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 
 // price text, no digit substitution
 const intTxt = (n: number) => Math.round(n).toLocaleString("en-US");
 const decTxt = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const EMO: Record<string, string> = { usd: "🇺🇸", cad: "🇨🇦", eur: "🇪🇺", aed: "🇦🇪", cny: "🇨🇳", try: "🇹🇷", usd_fardayi: "⏳", usd_herat_fardayi: "🇦🇫", usdt: "💲", btc: "🟠", eth: "🔷", sol: "☀️", bnb: "🟡", xrp: "💧", matic: "🟣", coin_emami: "🥇", coin_half: "🥈", coin_quarter: "🥉", coin_gram: "🪙", gold_ounce: "🌐", gold_mesghal: "⚖️", gold_18k: "✨", gold_24k: "💛", silver_gram: "🤍", silver_ounce: "⚪", coin_bahar: "🏅", oil: "⛽" };
-const NAME: Record<string, string> = { usd: "دلار امریکا", cad: "دلار کانادا", eur: "یورو", aed: "درهم امارات", cny: "یوان چین", try: "لیر ترکیه", usd_fardayi: "دلار فردایی", usd_herat_fardayi: "هرات فردایی", usdt: "تتر", btc: "بیت کوین", eth: "اتریوم", sol: "سولانا", bnb: "بی ان بی", xrp: "ریپل", matic: "پالیگان", coin_emami: "سکه امامی", coin_half: "نیم سکه", coin_quarter: "ربع سکه", coin_gram: "سکه گرمی", gold_ounce: "انس طلا - جهانی", gold_mesghal: "آب‌شده (مثقال)", gold_18k: "طلای ۱۸ عیار", gold_24k: "طلای ۲۴ عیار", silver_gram: "نقره ۹۲۵", silver_ounce: "انس نقره", coin_bahar: "سکه بهار آزادی", oil: "نفت برنت" };
+const EMO: Record<string, string> = { usd: "🇺🇸", cad: "🇨🇦", eur: "🇪🇺", aed: "🇦🇪", cny: "🇨🇳", try: "🇹🇷", usd_fardayi: "⏳", usd_herat_fardayi: "🇦🇫", usd_herat: "💱", usdt: "💲", btc: "🟠", eth: "🔷", sol: "☀️", bnb: "🟡", xrp: "💧", matic: "🟣", coin_emami: "🥇", coin_half: "🥈", coin_quarter: "🥉", coin_gram: "🪙", gold_ounce: "🌐", gold_mesghal: "⚖️", gold_18k: "✨", gold_24k: "💛", silver_gram: "🤍", silver_ounce: "⚪", coin_bahar: "🏅", oil: "⛽" };
+const NAME: Record<string, string> = { usd: "دلار امریکا", cad: "دلار کانادا", eur: "یورو", aed: "درهم امارات", cny: "یوان چین", try: "لیر ترکیه", usd_fardayi: "دلار فردایی", usd_herat_fardayi: "هرات فردایی", usd_herat: "دلار هرات", usdt: "تتر", btc: "بیت کوین", eth: "اتریوم", sol: "سولانا", bnb: "بی ان بی", xrp: "ریپل", matic: "پالیگان", coin_emami: "سکه امامی", coin_half: "نیم سکه", coin_quarter: "ربع سکه", coin_gram: "سکه گرمی", gold_ounce: "انس طلا - جهانی", gold_mesghal: "آب‌شده (مثقال)", gold_18k: "طلای ۱۸ عیار", gold_24k: "طلای ۲۴ عیار", silver_gram: "نقره ۹۲۵", silver_ounce: "انس نقره", coin_bahar: "سکه بهار آزادی", oil: "نفت برنت" };
 
 async function sendTelegram(text: string) {
   const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
@@ -595,7 +595,7 @@ Deno.serve(async (req) => {
   const wantsTest = new URL(req.url).searchParams.get("test") === "1";
   const wantsAlertTest = new URL(req.url).searchParams.get("alert_test") === "1";
   const wantsDebugOil = new URL(req.url).searchParams.get("debug_oil") === "1";
-  const market: Record<string, any> = { usd: null, eur: null, aed: null, usdt: null, cad: null, cny: null, try: null, usd_fardayi: null, usd_herat_fardayi: null, btc: null, eth: null, sol: null, bnb: null, xrp: null, matic: null, btc_usd: null, eth_usd: null, sol_usd: null, bnb_usd: null, xrp_usd: null, matic_usd: null, gold_18k: null, gold_24k: null, gold_mesghal: null, gold_ounce: null, silver_ounce: null, silver_gram: null, coin_emami: null, coin_bahar: null, coin_half: null, coin_quarter: null, coin_gram: null, oil: null };
+  const market: Record<string, any> = { usd: null, eur: null, aed: null, usdt: null, cad: null, cny: null, try: null, usd_fardayi: null, usd_herat_fardayi: null, usd_herat: null, btc: null, eth: null, sol: null, bnb: null, xrp: null, matic: null, btc_usd: null, eth_usd: null, sol_usd: null, bnb_usd: null, xrp_usd: null, matic_usd: null, gold_18k: null, gold_24k: null, gold_mesghal: null, gold_ounce: null, silver_ounce: null, silver_gram: null, coin_emami: null, coin_bahar: null, coin_half: null, coin_quarter: null, coin_gram: null, oil: null };
   const errors: string[] = [];
 
   const jobs: Promise<unknown>[] = [];
@@ -605,6 +605,11 @@ Deno.serve(async (req) => {
   jobs.push(fetchCurrency("cad").then((v) => (market.cad = v)).catch((e) => errors.push(`cad: ${e.message}`)));
   jobs.push(fetchCurrency("cny").then((v) => (market.cny = v)).catch((e) => errors.push(`cny: ${e.message}`)));
   jobs.push(fetchCurrency("try").then((v) => (market.try = v)).catch((e) => errors.push(`try: ${e.message}`)));
+  // دلار هرات نقدی از «الان چند» (۲۰۲۶-۱۱-۱۴، به‌خواست حامد): صفحهٔ
+  // en/currencies-price/usd-herat — همان الگوی یورو/کانادا؛ اول JSON-LD،
+  // بعد ورودیِ مبدل؛ قیمت به ریال ÷ ۱۰ می‌شود (۲٬۶۹۳٬۰۰۰ ریال = ۲۶۹٬۳۰۰ تومان،
+  // راستی‌آزمایی زنده ۲۰۲۶-۱۱-۱۴ ساعت ۱۸:۵۰ UTC).
+  jobs.push(fetchCurrency("usd-herat").then((v) => (market.usd_herat = v)).catch((e) => errors.push(`usd_herat: ${e.message}`)));
   // نرخ‌های فردایی از تلگرام (۲۰۲۶-۱۱-۱۴): دلار فردایی تهران از @pi_jt،
   // هرات فردایی از @turan_Ex — هر دو با همان فرمتِ «نام ⏳ عدد فروش/خرید».
   jobs.push(fetchForwardFromTelegram("pi_jt", "دلار فردایی تهران").then((r) => {
@@ -656,7 +661,7 @@ Deno.serve(async (req) => {
   // نشد (اولین اجرا یا قطعی DB) گاردریل رد می‌شود، نه کل چرخه.
   let prev: Record<string, any> | null = null;
   try {
-    const prevRows = await rest("market?id=eq.1&select=usd,eur,aed,usdt,cad,cny,try,usd_fardayi,usd_herat_fardayi,btc,eth,sol,bnb,xrp,matic,btc_usd,eth_usd,sol_usd,bnb_usd,xrp_usd,matic_usd,gold_18k,gold_24k,gold_mesghal,gold_ounce,silver_ounce,silver_gram,coin_emami,coin_bahar,coin_half,coin_quarter,coin_gram,oil") as any[];
+    const prevRows = await rest("market?id=eq.1&select=usd,eur,aed,usdt,cad,cny,try,usd_fardayi,usd_herat_fardayi,usd_herat,btc,eth,sol,bnb,xrp,matic,btc_usd,eth_usd,sol_usd,bnb_usd,xrp_usd,matic_usd,gold_18k,gold_24k,gold_mesghal,gold_ounce,silver_ounce,silver_gram,coin_emami,coin_bahar,coin_half,coin_quarter,coin_gram,oil") as any[];
     prev = prevRows?.[0] ?? null;
   } catch (_) { /* no previous row -> guards skip */ }
 
@@ -720,7 +725,7 @@ Deno.serve(async (req) => {
   const MOVE_LIMIT: Record<string, number> = {
     usd: 0.08, eur: 0.08, aed: 0.08, usdt: 0.08,
     cad: 0.08, cny: 0.08, try: 0.08,
-    usd_fardayi: 0.08, usd_herat_fardayi: 0.08,
+    usd_fardayi: 0.08, usd_herat_fardayi: 0.08, usd_herat: 0.08,
     btc: 0.10, eth: 0.10, sol: 0.10, bnb: 0.10, xrp: 0.10, matic: 0.10,
     btc_usd: 0.10, eth_usd: 0.10, sol_usd: 0.10, bnb_usd: 0.10, xrp_usd: 0.10, matic_usd: 0.10,
     gold_18k: 0.06, gold_24k: 0.06, gold_mesghal: 0.06, gold_ounce: 0.03, silver_ounce: 0.05,
@@ -753,9 +758,9 @@ Deno.serve(async (req) => {
       rejectSymbol("usd", `vs aed-peg: usd=${market.usd} aed*3.6725=${Math.round(implied)}`);
     }
   }
-  // (۳) نرخ‌های فردایی باید نزدیک دلارِ نقد باشند (معمولاً ۰ تا ۲٪ بالاتر)؛
-  // باند ۰٫۹۰–۱٫۱۰: بیرون از باند یعنی پارسِ تلگرام عددِ اشتباه گرفته.
-  for (const s of ["usd_fardayi", "usd_herat_fardayi"] as const) {
+  // (۳) نرخ‌های فردایی و دلار هرات نقدی باید نزدیک دلارِ نقد باشند (معمولاً ۰ تا ۲٪ بالاتر)؛
+  // باند ۰٫۹۰–۱٫۱۰: بیرون از باند یعنی پارس عددِ اشتباه گرفته.
+  for (const s of ["usd_fardayi", "usd_herat_fardayi", "usd_herat"] as const) {
     if (market[s] != null && market.usd != null) {
       const ratio = Number(market[s]) / Number(market.usd);
       if (ratio < 0.90 || ratio > 1.10) {
@@ -849,7 +854,7 @@ Deno.serve(async (req) => {
 
   // snapshot + history  (only the real numeric columns go to the table;
   // updated_iso/date/time live inside `payload` only)
-  const FIELDS = ["usd", "eur", "aed", "usdt", "cad", "cny", "try", "usd_fardayi", "usd_herat_fardayi", "btc", "eth", "sol", "bnb", "xrp", "matic", "btc_usd", "eth_usd", "sol_usd", "bnb_usd", "xrp_usd", "matic_usd", "gold_18k", "gold_24k", "gold_mesghal", "gold_ounce", "silver_ounce", "silver_gram", "coin_emami", "coin_bahar", "coin_half", "coin_quarter", "coin_gram", "oil"] as const;
+  const FIELDS = ["usd", "eur", "aed", "usdt", "cad", "cny", "try", "usd_fardayi", "usd_herat_fardayi", "usd_herat", "btc", "eth", "sol", "bnb", "xrp", "matic", "btc_usd", "eth_usd", "sol_usd", "bnb_usd", "xrp_usd", "matic_usd", "gold_18k", "gold_24k", "gold_mesghal", "gold_ounce", "silver_ounce", "silver_gram", "coin_emami", "coin_bahar", "coin_half", "coin_quarter", "coin_gram", "oil"] as const;
   const row: Record<string, any> = { id: 1, updated_at: now.toISOString(), payload: market };
   for (const f of FIELDS) row[f] = market[f];
   await rest("market?on_conflict=id", {
@@ -858,7 +863,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify(row),
   });
 
-  const watched = ["usd", "cad", "eur", "aed", "cny", "try", "usd_fardayi", "usd_herat_fardayi", "usdt", "btc", "eth", "sol", "bnb", "xrp", "matic", "gold_18k", "gold_24k", "gold_mesghal", "coin_emami", "coin_half", "coin_quarter", "coin_gram", "gold_ounce", "silver_gram", "oil"];
+  const watched = ["usd", "cad", "eur", "aed", "cny", "try", "usd_fardayi", "usd_herat_fardayi", "usd_herat", "usdt", "btc", "eth", "sol", "bnb", "xrp", "matic", "gold_18k", "gold_24k", "gold_mesghal", "coin_emami", "coin_half", "coin_quarter", "coin_gram", "gold_ounce", "silver_gram", "oil"];
   const rows = watched.filter((s) => market[s] !== null).map((s) => ({
     symbol: s, price: Number(market[s]), ts: now.toISOString(),
   }));
@@ -955,7 +960,7 @@ Deno.serve(async (req) => {
     return Number.isFinite(pv) && pv > 0 ? pv : null;
   };
   const SECTIONS = [
-    { t: "#ارزها", s: ["usd", "usd_fardayi", "usd_herat_fardayi", "cad", "eur", "aed", "cny", "try"] },
+    { t: "#ارزها", s: ["usd", "usd_herat", "usd_fardayi", "usd_herat_fardayi", "cad", "eur", "aed", "cny", "try"] },
     { t: "#کریپتو", s: ["usdt", "btc", "eth", "sol", "bnb", "xrp", "matic"] },
     { t: "#طلاوسکه", s: ["coin_emami", "coin_half", "coin_quarter", "coin_gram", "gold_ounce", "gold_mesghal", "gold_18k", "gold_24k", "silver_gram"] },
     { t: "#انرژی", s: ["oil"] },
