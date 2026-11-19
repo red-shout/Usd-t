@@ -6,17 +6,14 @@
 // Sources (all free, no key):
 //   - Earthquake: USGS FDSN feed (global, structured, reachable). IRNO is the
 //     official Iranian feed but is SNI-blocked here; USGS is the reliable proxy.
-//   - Weather: IRIMETS (irimo.ir) "هشدار هواشناسی" red/orange warnings.
-//     Fallback while irimo is unreachable: Open-Meteo forecast (free, no
-//     key) for Tehran + Karaj, with fixed thresholds — gusts >= 80 km/h
-//     (next 6h), rain >= 20 mm / 6h or >= 30 mm / 24h, hail thunderstorm
-//     (WMO 96/99, next 6h), snow >= 10 cm / 12h. The fallback runs ONLY
-//     when the irimo fetch fails; when irimo is back it stops by itself
-//     (irimo stays the primary source). irimo backoff: after 3 consecutive
-//     failures it is checked at most once an hour (counter in alert_state,
-//     symbol irimo:fail); Open-Meteo covers the gap meanwhile. Forecast-
-//     derived alerts are labelled as such in the message — they are NOT
-//     official warnings.
+//   - Weather: Open-Meteo forecast (free, no key) for Tehran + Karaj, with
+//     fixed thresholds — gusts >= 80 km/h (next 6h), rain >= 20 mm / 6h or
+//     >= 30 mm / 24h, hail thunderstorm (WMO 96/99, next 6h), snow >= 10 cm
+//     / 12h. Permanent primary source since 2026-11-19 (Hamed's decision
+//     «دائمی کن»): irimo.ir was the official source but has been down since
+//     2026-11-09 (213 consecutive failures) and Open-Meteo covered the gap
+//     as a temporary fallback since then. Forecast-derived alerts are
+//     labelled as such in the message — they are NOT official warnings.
 //
 // Scope (Hamed, 2026-11-09): Tehran + Alborz only, for now.
 //   - Quakes: epicentre inside the Tehran+Alborz box (lat 35.2–36.4, lon 50.3–52.6).
@@ -162,56 +159,9 @@ function placeFa(place: string): string {
   return place;
 }
 
-// ---------------------------------------------------------------- weather
-async function fetchWeatherWarnings(): Promise<{ id: string; level: string; text: string }[]> {
-  // IRIMETS homepage lists the most recent "هشدار هواشناسی" news items with a
-  // colour level. Post only red/orange (the "important" tiers), deduped by id,
-  // and only when the warning's detail page names Tehran or Alborz.
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), 15000);
-  const out: { id: string; level: string; text: string }[] = [];
-  try {
-    const r = await fetch("https://www.irimo.ir/", { headers: { "user-agent": "Mozilla/5.0" }, signal: ctl.signal, redirect: "follow" });
-    if (!r.ok) throw new Error(`irimo HTTP ${r.status}`);
-    const html = await r.text();
-    // links: /far/services/news/<id>-هشدار-هواشناسی-سطح-<level>-...
-    const re = /irimo\.ir\/far\/services\/news\/(\d+)-هشدار-هواشناسی(?:-دریایی)?-سطح-(قرمز|نارنجی|زرد)[^"']*/g;
-    const seen = new Set<string>();
-    let m: RegExpExecArray | null;
-    const lvl: Record<string, string> = { "قرمز": "red", "نارنجی": "orange", "زرد": "yellow" };
-    while ((m = re.exec(html)) !== null) {
-      const [, id, word] = m;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const level = lvl[word];
-      if (level !== "red" && level !== "orange") continue;
-      const link = `https://www.irimo.ir/far/services/news/${id}`;
-      // Province check: the detail page names the province/region.
-      let detail = "";
-      try {
-        const c2 = new AbortController();
-        const t2 = setTimeout(() => c2.abort(), 10000);
-        try {
-          const r2 = await fetch(link, { headers: { "user-agent": "Mozilla/5.0" }, signal: c2.signal, redirect: "follow" });
-          if (r2.ok) detail = await r2.text();
-        } finally {
-          clearTimeout(t2);
-        }
-      } catch (_) { /* detail fetch failed -> province unverified, skip below */ }
-      if (!detail) throw new Error(`irimo detail ${id}: unreachable (province unverified)`);
-      const title = (detail.match(/<title>(.*?)<\/title>/s)?.[1] ?? "").replace(/<[^>]+>/g, "").trim().slice(0, 120);
-      if (!/تهران|البرز/.test(detail)) continue; // other province -> not our scope
-      const head = title ? `\n${title}` : "";
-      out.push({ id, level, text: `<b>⚠️ هشدار هواشناسی — سطح ${word}</b>${head}\nجزئیات: ${link}` });
-    }
-  } finally {
-    clearTimeout(t);
-  }
-  return out;
-}
-
+// ---------------------------------------------------------------- weather (Open-Meteo — permanent primary source, 2026-11-19)
 // ---------------------------------------------------------------- weather fallback (Open-Meteo)
-// Free forecast API, no key. Runs ONLY when the irimo fetch fails.
+// Free forecast API, no key. Permanent primary weather source since 2026-11-19.
 // Thresholds (Hamed-approved defaults, 2026-11-09):
 //   gusts >= 80 km/h (next 6h) | rain >= 20 mm / 6h or >= 30 mm / 24h
 //   hail thunderstorm WMO 96/99 (next 6h) | snow >= 10 cm (next 12h)
@@ -236,7 +186,7 @@ async function fetchOpenMeteoAlerts(): Promise<{ key: string; text: string }[]> 
     // Current hour in Tehran as "YYYY-MM-DDTHH" (Tehran = UTC+3:30).
     const cur = new Date(Date.now() + 3.5 * 3600 * 1000).toISOString().slice(0, 13);
     const out: { key: string; text: string }[] = [];
-    const tag = "منبع: Open-Meteo (جایگزین موقت — هشدار رسمی نیست)";
+    const tag = "منبع: Open-Meteo (پیش‌بینی — هشدار رسمی نیست)";
     for (let li = 0; li < locs.length; li++) {
       const loc = OM_LOCS[li] ?? { name: `نقطه ${li + 1}` };
       const h = locs[li]?.hourly;
@@ -364,27 +314,15 @@ Deno.serve(async (req) => {
 
   const minMag = Number(Deno.env.get("ALERTS_EQ_MIN_MAG") ?? "4.5");
 
-  // irimo backoff: while irimo is down, every run waited out its 15s timeout
-  // for nothing (288 wasted waits a day). After 3 failures in a row, check
-  // it at most once an hour; Open-Meteo covers the gap meanwhile. A success
-  // resets the counter. The counter lives in alert_state (irimo:fail).
-  let irimoFails = 0;
-  let irimoSkip = false;
-  try {
-    const rows = await rest(`alert_state?symbol=eq.irimo:fail&select=last_price,last_alert_ts`) as any[];
-    const r0 = rows?.[0];
-    irimoFails = Number(r0?.last_price ?? 0);
-    const lastFail = r0?.last_alert_ts ? Date.parse(r0.last_alert_ts) : 0;
-    irimoSkip = irimoFails >= 3 && Date.now() - lastFail < 3600 * 1000;
-  } catch (_) { /* backoff state unreadable -> check normally */ }
-  const wxTask: Promise<{ items: { id: string; level: string; text: string }[]; skipped: boolean }> = irimoSkip
-    ? Promise.resolve({ items: [], skipped: true })
-    : fetchWeatherWarnings().then((items) => ({ items, skipped: false }));
+  // Weather: Open-Meteo is the permanent primary source (2026-11-19).
+  // It runs in parallel with quake + mahsa, so a slow forecast never
+  // delays the earthquake check.
+  const wxTask: Promise<{ key: string; text: string }[]> = fetchOpenMeteoAlerts();
 
   const [quakeRes, wxRes, mahsaRes] = await Promise.allSettled([fetchQuakes(minMag), wxTask, fetchMahsaAlerts()]);
 
-  // 1) build candidate alerts — quake + weather + mahsa in parallel, so a
-  // slow irimo never delays the earthquake check.
+  // 1) build candidate alerts — quake + weather + mahsa in parallel.
+
   type Cand = { key: string; kind: string; text: string };
   const cands: Cand[] = [];
   if (quakeRes.status === "fulfilled") {
@@ -405,36 +343,12 @@ Deno.serve(async (req) => {
     sources.quake = "error";
     errors.push(`quake: ${quakeRes.reason?.message ?? quakeRes.reason}`);
   }
-  if (wxRes.status === "fulfilled" && !wxRes.value.skipped) {
+  if (wxRes.status === "fulfilled") {
     sources.weather = "ok";
-    if (irimoFails > 0) {
-      // irimo is back: clear the failure counter (fire-and-forget).
-      await rest(`alert_state?on_conflict=symbol`, {
-        method: "POST",
-        body: JSON.stringify({ symbol: "irimo:fail", last_price: 0 }),
-        headers: { Prefer: "resolution=merge-duplicates" },
-      }).catch(() => null);
-    }
-    for (const w of wxRes.value.items) cands.push({ key: `wx:${w.id}`, kind: "weather", text: w.text });
+    for (const w of wxRes.value) cands.push({ key: `wxom:${w.key}`, kind: "weather-forecast", text: w.text });
   } else {
-    if (wxRes.status === "rejected") {
-      // irimo failed again: bump the consecutive-failure counter.
-      await rest(`alert_state?on_conflict=symbol`, {
-        method: "POST",
-        body: JSON.stringify({ symbol: "irimo:fail", last_price: irimoFails + 1, last_alert_ts: new Date().toISOString() }),
-        headers: { Prefer: "resolution=merge-duplicates" },
-      }).catch(() => null);
-    }
-    // irimo down (or in backoff) -> Open-Meteo forecast fallback (temporary, labelled).
-    try {
-      const om = await fetchOpenMeteoAlerts();
-      sources.weather = "fallback";
-      for (const w of om) cands.push({ key: `wxom:${w.key}`, kind: "weather-forecast", text: w.text });
-    } catch (e: any) {
-      sources.weather = "error";
-      const irimoErr = wxRes.status === "rejected" ? `irimo: ${wxRes.reason?.message ?? wxRes.reason}; ` : "";
-      errors.push(`weather: ${irimoErr}open-meteo: ${e?.message ?? e}`);
-    }
+    sources.weather = "error";
+    errors.push(`weather: open-meteo: ${wxRes.reason?.message ?? wxRes.reason}`);
   }
 
   if (mahsaRes.status === "fulfilled") {
@@ -468,7 +382,7 @@ Deno.serve(async (req) => {
   // 4) source failures get a throttled private notice (never silent).
   if (!dry) {
     if (sources.quake === "error") await noteSourceDown("quake", errors.find((e) => e.startsWith("quake:")) ?? "USGS unreachable");
-    if (sources.weather === "error") await noteSourceDown("weather", errors.find((e) => e.startsWith("weather:")) ?? "irimo unreachable");
+    if (sources.weather === "error") await noteSourceDown("weather", errors.find((e) => e.startsWith("weather:")) ?? "open-meteo unreachable");
     if (sources.mahsa === "error") await noteSourceDown("mahsa", errors.find((e) => e.startsWith("mahsa:")) ?? "mahsa feed unreachable");
   }
 
