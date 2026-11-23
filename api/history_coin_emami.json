@@ -3,14 +3,14 @@
   "title": "سکه تمام امامی",
   "unit": "تومان",
   "timezone": "Asia/Tehran",
-  "updated_at": "2026-11-23 05:26:16",
+  "updated_at": "2026-11-23 14:08:58",
   "total_records": 1213,
   "latest": {
-    "timestamp": 1795398976,
+    "timestamp": 1795430338,
     "date": "2026-11-23",
-    "price": 243000000,
-    "price_toman": 243000000,
-    "price_irr": 2430000000
+    "price": 252500000,
+    "price_toman": 252500000,
+    "price_irr": 2525000000
   },
   "history": [
     {
@@ -10826,11 +10826,11 @@
       "price_irr": 2430000000
     },
     {
-      "timestamp": 1795398976,
+      "timestamp": 1795430338,
       "date": "2026-11-23",
-      "price": 243000000,
-      "price_toman": 243000000,
-      "price_irr": 2430000000
+      "price": 252500000,
+      "price_toman": 252500000,
+      "price_irr": 2525000000
     }
   ]
 }
